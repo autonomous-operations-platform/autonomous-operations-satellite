@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Autonomous Operations Platform contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+# ----
+
+# Default ownership
+* @autonomous-operations-platform/sap-dev
+
+# Repository administration
+/.github/CODEOWNERS @autonomous-operations-platform/repository-admins
+
+# Continuous integration, releases, and repository automation
+/.github/workflows/ @autonomous-operations-platform/dev-ops
+/.github/workflows/codeql.yml @autonomous-operations-platform/sec-ops
+/renovate.json @autonomous-operations-platform/sec-ops
+
+# Agent harness and architecture guidance
+/AGENTS.md @autonomous-operations-platform/dev-ops
+/CLAUDE.md @autonomous-operations-platform/dev-ops
+/.claude/ @autonomous-operations-platform/dev-ops
