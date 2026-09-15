@@ -1,4 +1,4 @@
-[![REUSE status](https://api.reuse.software/badge/github.com/autonomous-operations-platform/autonomous-operations-satellite)](https://api.reuse.software/info/github.com/autonomous-operations-platform/autonomous-operations-satellite)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/autonomous-operations-platform/autonomous-operations-satellite/badge)](https://scorecard.dev/viewer/?uri=github.com/autonomous-operations-platform/autonomous-operations-satellite) [![REUSE status](https://api.reuse.software/badge/github.com/autonomous-operations-platform/autonomous-operations-satellite)](https://api.reuse.software/info/github.com/autonomous-operations-platform/autonomous-operations-satellite)
 
 # Autonomous Operations Satellite
 
