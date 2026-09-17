@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-.PHONY: build test test-race vet
+.PHONY: build test vet
 
 build:
 	mkdir -p bin
@@ -10,9 +10,6 @@ build:
 
 test:
 	go test ./...
-
-test-race:
-	go test -race ./...
 
 vet:
 	go vet ./...

@@ -8,39 +8,11 @@ Executes deterministic, rule-based data center automation on bare metal. Operate
 
 ## Requirements and Setup
 
-The Satellite builds as one Go module and one binary.
-
-Use Go 1.27.0.
-
-Run these commands from the repository root:
-
-```bash
-go test ./...
-go test -race ./...
-go vet ./...
-mkdir -p bin
-CGO_ENABLED=0 go build -trimpath -o bin/satellite ./cmd/satellite
-```
-
-The optional Make targets run the same commands:
-
-```bash
-make test
-make test-race
-make vet
-make build
-```
-
-The `satellite` binary runs one Autonomous Operations Satellite node.
-
-Packages under `services/` are logical components in the same process.
-The `shared/framework` package provides the common component SDK.
-The `proto/` directory holds source protocol definitions.
-The `gen/go/` directory holds generated Go code.
+Use the Go version defined in [`.go-version`](.go-version).
 
 ## Support, Feedback, Contributing
 
-This project is open to feature requests/suggestions, bug reports etc. via [GitHub issues](https://github.com/autonomous-operations-platform/repository-template/issues). Contribution and feedback are encouraged and always welcome. For more information about how to contribute, the project structure, as well as additional contribution information, see our [Contribution Guidelines](https://github.com/autonomous-operations-platform/.github/blob/main/CONTRIBUTING.md).
+This project is open to feature requests/suggestions, bug reports etc. via [GitHub issues](https://github.com/autonomous-operations-platform/autonomous-operations-satellite/issues). Contribution and feedback are encouraged and always welcome. For more information about how to contribute, the project structure, as well as additional contribution information, see our [Contribution Guidelines](https://github.com/autonomous-operations-platform/.github/blob/main/CONTRIBUTING.md).
 
 ## Security / Disclosure
 
@@ -52,4 +24,4 @@ We as members, contributors, and leaders pledge to make participation in our com
 
 ## Licensing
 
-Copyright 2026 SAP SE or an SAP affiliate company and Autonomous Operations Platform contributors. Please see our [LICENSE](./LICENSE) for copyright and license information. Detailed information including third-party components and their licensing/copyright information is available [via the REUSE tool](https://api.reuse.software/info/github.com/autonomous-operations-platform/repository-template).
+Copyright 2026 SAP SE or an SAP affiliate company and Autonomous Operations Platform contributors. Please see our [LICENSE](./LICENSE) for copyright and license information. Detailed information including third-party components and their licensing/copyright information is available [via the REUSE tool](https://api.reuse.software/info/github.com/autonomous-operations-platform/autonomous-operations-satellite).
