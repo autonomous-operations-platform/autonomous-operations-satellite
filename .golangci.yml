@@ -10,18 +10,35 @@ run:
 
 formatters:
   enable:
-    - gofmt
     - goimports
 
 linters:
   default: none
   enable:
-    - copyloopvar
-    - errcheck
-    - errorlint
-    - gosec
-    - govet
-    - ineffassign
-    - intrange
-    - staticcheck
-    - unused
+    - bidichk # detects dangerous Unicode direction-override characters (supply chain / trojan source attack vector)
+    - errcheck # flags unchecked error return values
+    - errorlint # enforces correct error wrapping and comparison (errors.Is/As instead of ==)
+    - gochecknoglobals # disallows package-level variables; encourages explicit dependency injection
+    - gochecknoinits # disallows init(); side-effectful init is hard to test and reason about
+    - gosec # static analysis for common security issues (hardcoded creds, weak crypto, etc.)
+    - govet # reports suspicious constructs the compiler accepts but are likely wrong
+    - ineffassign # flags assignments whose value is never used before being overwritten
+    - intrange # suggests for range over integer where applicable (Go 1.22+)
+    - nolintlint # enforces that nolint directives name the specific linter and include an explanation
+    - sloglint # enforces consistent slog usage (no global loggers, context required)
+    - staticcheck # broad static analysis: bugs, deprecated APIs, performance, correctness
+    - unused # flags unexported identifiers that are never referenced
+
+  settings:
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+
+    sloglint:
+      no-global: all
+      context: scope
