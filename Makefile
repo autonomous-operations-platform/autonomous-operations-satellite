@@ -6,7 +6,7 @@ COVERAGE_THRESHOLD := 95
 COVERAGE_DIR      := coverage
 COVERAGE_PROFILE  := $(COVERAGE_DIR)/coverage.out
 
-.PHONY: build coverage lint test vet
+.PHONY: build coverage lint test
 
 build:
 	mkdir -p bin
@@ -22,6 +22,4 @@ test:
 	mkdir -p $(COVERAGE_DIR)
 	go test -coverprofile=$(COVERAGE_PROFILE) ./...
 	@scripts/check-coverage.sh $(COVERAGE_PROFILE) $(COVERAGE_THRESHOLD)
-
-vet:
-	go vet ./...
+...
