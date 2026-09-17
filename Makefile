@@ -2,11 +2,14 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-.PHONY: build test vet
+.PHONY: build lint test vet
 
 build:
 	mkdir -p bin
 	CGO_ENABLED=0 go build -trimpath -o bin/satellite ./cmd/satellite
+
+lint:
+	golangci-lint run ./...
 
 test:
 	go test ./...

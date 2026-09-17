@@ -10,6 +10,8 @@ Executes deterministic, rule-based data center automation on bare metal. Operate
 
 Use the Go version defined in [`.go-version`](.go-version).
 
+Install [golangci-lint v2.13.2](https://golangci-lint.run/welcome/install/) to run `make lint`.
+
 ## Support, Feedback, Contributing
 
 This project is open to feature requests/suggestions, bug reports etc. via [GitHub issues](https://github.com/autonomous-operations-platform/autonomous-operations-satellite/issues). Contribution and feedback are encouraged and always welcome. For more information about how to contribute, the project structure, as well as additional contribution information, see our [Contribution Guidelines](https://github.com/autonomous-operations-platform/.github/blob/main/CONTRIBUTING.md).
