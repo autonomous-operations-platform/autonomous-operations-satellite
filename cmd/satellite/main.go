@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-module github.com/autonomous-operations-platform/autonomous-operations-satellite/services/operator
+// Command satellite starts one Autonomous Operations Satellite node.
+package main
 
-go 1.26.8
+func main() {}

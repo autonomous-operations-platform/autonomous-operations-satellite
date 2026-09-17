@@ -2,6 +2,6 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-module github.com/autonomous-operations-platform/autonomous-operations-satellite/shared/framework
+module github.com/autonomous-operations-platform/autonomous-operations-satellite
 
-go 1.26.8
+go 1.27.0

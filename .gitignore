@@ -121,9 +121,6 @@ Thumbs.db
 .terraformrc
 terraform.rc
 
-# Generated
-gen/
-
 # claude
 .claude/settings.local.json
 .claude/plans/

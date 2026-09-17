@@ -8,7 +8,35 @@ Executes deterministic, rule-based data center automation on bare metal. Operate
 
 ## Requirements and Setup
 
-*Insert a short description what is required to get your project running...*
+The Satellite builds as one Go module and one binary.
+
+Use Go 1.27.0.
+
+Run these commands from the repository root:
+
+```bash
+go test ./...
+go test -race ./...
+go vet ./...
+mkdir -p bin
+CGO_ENABLED=0 go build -trimpath -o bin/satellite ./cmd/satellite
+```
+
+The optional Make targets run the same commands:
+
+```bash
+make test
+make test-race
+make vet
+make build
+```
+
+The `satellite` binary runs one Autonomous Operations Satellite node.
+
+Packages under `services/` are logical components in the same process.
+The `shared/framework` package provides the common component SDK.
+The `proto/` directory holds source protocol definitions.
+The `gen/go/` directory holds generated Go code.
 
 ## Support, Feedback, Contributing
 
