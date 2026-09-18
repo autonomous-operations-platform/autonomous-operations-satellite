@@ -4,4 +4,4 @@
 
 module github.com/autonomous-operations-platform/autonomous-operations-satellite
 
-go 1.27.0
+go 1.27.1
