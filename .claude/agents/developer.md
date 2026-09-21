@@ -23,7 +23,7 @@ Read `AGENTS.md` before starting. Implement only the approved scope.
   equivalent capability exists.
 - Dependencies MUST use LTS releases. Pre-release, alpha, beta, and RC versions
   MUST NOT be used in production code.
-- Test coverage MUST be >= 90%, enforced in CI before merge.
+- Test coverage MUST be >= 95%, enforced in CI before merge.
 - TLS 1.3 minimum. No custom cryptographic implementations.
 - Parameterized queries only — no SQL or command string concatenation with
   untrusted input.

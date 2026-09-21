@@ -55,3 +55,7 @@ indent_size = 4
 # Dockerfile
 [Dockerfile*]
 indent_size = 4
+
+# Protocol Buffers
+[*.proto]
+indent_size = 2
