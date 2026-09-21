@@ -1,0 +1,54 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Autonomous Operations Platform contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+---
+"cmd":
+  - changed-files:
+      - any-glob-to-any-file: "cmd/**"
+
+"collector":
+  - changed-files:
+      - any-glob-to-any-file: "internal/collector/**"
+
+"core":
+  - changed-files:
+      - any-glob-to-any-file: "internal/core/**"
+
+"observer":
+  - changed-files:
+      - any-glob-to-any-file: "internal/observer/**"
+
+"operator":
+  - changed-files:
+      - any-glob-to-any-file: "internal/operator/**"
+
+"srs":
+  - changed-files:
+      - any-glob-to-any-file: "internal/srs/**"
+
+"vault":
+  - changed-files:
+      - any-glob-to-any-file: "internal/vault/**"
+
+"framework":
+  - changed-files:
+      - any-glob-to-any-file: "pkg/**"
+
+"proto":
+  - changed-files:
+      - any-glob-to-any-file: "proto/**"
+
+"scripts":
+  - changed-files:
+      - any-glob-to-any-file: "scripts/**"
+
+"ci":
+  - changed-files:
+      - any-glob-to-any-file: ".github/**"
+
+"dependencies":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "go.mod"
+          - "go.sum"
+          - "renovate.json"
