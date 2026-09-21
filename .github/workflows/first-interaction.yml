@@ -4,6 +4,11 @@
 ---
 name: First-time contributors
 
+# pull_request_target is intentionally used here instead of pull_request so the
+# workflow runs with write permissions even for PRs from forks. This is safe
+# because neither step checks out nor executes any code from the PR branch.
+# The only write operations are posting a welcome comment via the app token.
+# See: https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
 on:
   issues:
     types: [opened]

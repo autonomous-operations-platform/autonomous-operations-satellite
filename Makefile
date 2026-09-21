@@ -6,11 +6,14 @@ COVERAGE_THRESHOLD := 95
 COVERAGE_DIR      := coverage
 COVERAGE_PROFILE  := $(COVERAGE_DIR)/coverage.out
 
-.PHONY: build coverage lint test
+.PHONY: build clean coverage lint test
 
 build:
 	mkdir -p bin
 	CGO_ENABLED=0 go build -trimpath -o bin/satellite ./cmd/satellite
+
+clean:
+	rm -rf bin/ $(COVERAGE_DIR)/
 
 coverage:
 	go tool cover -html=$(COVERAGE_PROFILE)

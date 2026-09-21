@@ -8,9 +8,9 @@ Executes deterministic, rule-based data center automation on bare metal. Operate
 
 ## Requirements and Setup
 
-Use the Go version defined in [`.go-version`](.go-version).
+Use the Go version defined in [`go.mod`](go.mod).
 
-Install [golangci-lint v2.13.2](https://golangci-lint.run/welcome/install/) to run `make lint`.
+Install [golangci-lint](https://golangci-lint.run/welcome/install/) to run `make lint`.
 
 ## Support, Feedback, Contributing
 
