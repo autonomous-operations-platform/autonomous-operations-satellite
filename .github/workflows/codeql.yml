@@ -39,8 +39,6 @@ jobs:
         include:
           - language: go
             build-mode: autobuild
-          - language: javascript-typescript
-            build-mode: none
         # Actions workflow scanning is handled by the zizmor workflow.
         # CodeQL supports: 'actions', 'c-cpp', 'csharp', 'go', 'java-kotlin', 'javascript-typescript', 'python', 'ruby', 'rust', 'swift'
     steps:
