@@ -1,0 +1,67 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Autonomous Operations Platform contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# Grant License Compliance Configuration
+# Complete configuration file with all available options
+# See: https://github.com/anchore/grant
+
+format: table
+quiet: false
+verbose: true
+
+require-license: true
+require-known-license: true
+
+allow:
+  - 0BSD
+  - Apache-*
+  - BSD-*-Clause
+  - BSD-2-Clause-Patent
+  - BSD-2-Clause-FreeBSD
+  - BSD-2-Clause-NetBSD
+  - BSD-2-Clause-Views
+  - BSD-3-Clause-Attribution
+  - BSD-3-Clause-Clear
+  - BSD-3-Clause-Modification
+  - ISC
+  - MIT
+  - MIT-Modern-Variant
+  - Unlicense
+  - Zlib
+  - CC0-*
+
+ignore-packages:
+  # actions/* is licensed under MIT
+  - actions/*
+
+  # github/codeql-action/* licensed under MIT
+  - github/codeql-action/*
+
+  # amannn/action-semantic-pull-request licensed under MIT
+  - amannn/action-semantic-pull-request
+
+  # fsfe/reuse-action licensed under CC0-1.0
+  - fsfe/reuse-action
+
+  # golangci/golangci-lint-action licensed under MIT
+  - golangci/golangci-lint-action
+  # golang/govulncheck-action licensed under BSD 3-Clause
+  - golang/govulncheck-action
+
+  # marocchino/sticky-pull-request-comment licensed under MIT
+  - marocchino/sticky-pull-request-comment
+
+  # ossf/scorecard-action licensed under Apache-2.0
+  - ossf/scorecard-action
+
+  # anchore/sbom-action licensed under Apache-2.0
+  - anchore/sbom-action
+  # anchore/scan-action licensed under MIT
+  - anchore/scan-action
+
+  # pnpm/action-setup licensed under MIT
+  - pnpm/action-setup
+
+  # zizmorcore/zizmor-action licensed under MIT
+  - zizmorcore/zizmor-action
