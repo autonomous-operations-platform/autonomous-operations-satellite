@@ -35,9 +35,22 @@ ignore-packages:
 
   # golangci/golangci-lint-action licensed under MIT
   - golangci/golangci-lint-action
+  # golang/govulncheck-action licensed under BSD 3-Clause
+  - golang/govulncheck-action
 
   # marocchino/sticky-pull-request-comment licensed under MIT
   - marocchino/sticky-pull-request-comment
 
   # ossf/scorecard-action licensed under Apache-2.0
   - ossf/scorecard-action
+
+  # anchore/sbom-action licensed under Apache-2.0
+  - anchore/sbom-action
+  # anchore/scan-action licensed under MIT
+  - anchore/scan-action
+
+  # pnpm/action-setup licensed under MIT
+  - pnpm/action-setup
+
+  # zizmorcore/zizmor-action licensed under MIT
+  - zizmorcore/zizmor-action
