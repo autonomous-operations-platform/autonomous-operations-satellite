@@ -14,14 +14,13 @@ on:
       - "**/*.lock"
       - "**/*lock.toml"
   pull_request:
-    ~
-    # branches: ["main"]
-    # paths:
-    #   - "**/*.sum"
-    #   - "**/*-lock.json"
-    #   - "**/*-lock.*"
-    #   - "**/*.lock"
-    #   - "**/*lock.toml"
+    branches: ["main"]
+    paths:
+      - "**/*.sum"
+      - "**/*-lock.json"
+      - "**/*-lock.*"
+      - "**/*.lock"
+      - "**/*lock.toml"
   workflow_dispatch: ~
   schedule:
     - cron: "25 3 * * 5"
