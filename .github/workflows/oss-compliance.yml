@@ -1,0 +1,50 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Autonomous Operations Platform contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+---
+name: OSS Compliance Validation
+
+# : triggers on a weekly schedule and any PR that touches a lock file
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "**/*.sum"
+      - "**/*-lock.json"
+      - "**/*-lock.*"
+      - "**/*.lock"
+      - "**/*lock.toml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "**/*.sum"
+      - "**/*-lock.json"
+      - "**/*-lock.*"
+      - "**/*.lock"
+      - "**/*lock.toml"
+  workflow_dispatch: ~
+  schedule:
+    - cron: "25 3 * * 5"
+
+jobs:
+  oss-grant-check:
+    name: OSS Grant Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Grant
+        id: setup-grant
+        run: |
+          curl -sSfL https://get.anchore.io/grant | sudo sh -s -- -b /usr/local/bin
+
+      - name: Verify Grant Installation
+        run: grant --version
+
+      - name: Run OSS Grant Check
+        run: grant check . -c ./.grant.yml

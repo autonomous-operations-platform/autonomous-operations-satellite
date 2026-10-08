@@ -1,0 +1,43 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Autonomous Operations Platform contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# Grant License Compliance Configuration
+# Complete configuration file with all available options
+# See: https://github.com/anchore/grant
+
+format: table
+quiet: false
+verbose: true
+
+require-license: true
+require-known-license: true
+
+allow:
+  - MIT
+  - ISC
+  - Apache-*
+  - BSD-*-Clause
+  - CC0-*
+
+ignore-packages:
+  # actions/* is licensed under MIT
+  - actions/*
+
+  # github/codeql-action/* licensed under MIT
+  - github/codeql-action/*
+
+  # amannn/action-semantic-pull-request licensed under MIT
+  - amannn/action-semantic-pull-request
+
+  # fsfe/reuse-action licensed under CC0-1.0
+  - fsfe/reuse-action
+
+  # golangci/golangci-lint-action licensed under MIT
+  - golangci/golangci-lint-action
+
+  # marocchino/sticky-pull-request-comment licensed under MIT
+  - marocchino/sticky-pull-request-comment
+
+  # ossf/scorecard-action licensed under Apache-2.0
+  - ossf/scorecard-action
