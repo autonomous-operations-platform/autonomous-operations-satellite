@@ -22,8 +22,6 @@ on:
       - "**/*.lock"
       - "**/*lock.toml"
   workflow_dispatch: ~
-  schedule:
-    - cron: "25 3 * * 5"
 
 jobs:
   oss-grant-check:
