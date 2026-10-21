@@ -1,0 +1,23 @@
+[agents.developer]
+description = "Coding standards, dependency rules, branch naming, and development-time guards."
+config_file = ".codex/roles/developer.toml"
+
+[agents.architect]
+description = "Design evaluation, ADR writing, cross-component reasoning, and implementation planning."
+config_file = ".codex/roles/architect.toml"
+
+[agents.security-reviewer]
+description = "Pre-merge security review and compliance verification against AO non-negotiables and product standards."
+config_file = ".codex/roles/security-reviewer.toml"
+
+[agents.code-reviewer]
+description = "Structured code review against the team checklist."
+config_file = ".codex/roles/code-reviewer.toml"
+
+[agents.threat-modeler]
+description = "STRIDE threat modeling for new components, integrations, or data flows. Pair with architect for design-time security review."
+config_file = ".codex/roles/threat-modeler.toml"
+
+[agents.devils-advocate]
+description = "Adversarial challenge of plans, designs, and decisions. Surfaces weaknesses and hidden assumptions."
+config_file = ".codex/roles/devils-advocate.toml"

@@ -1,0 +1,28 @@
+version: "2"
+
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+linters:
+  default: none
+  enable:
+    - copyloopvar
+    - errcheck
+    - errorlint
+    - gosec
+    - govet
+    - ineffassign
+    - intrange
+    - staticcheck
+    - unused
+
+exclusions:
+  paths:
+    - bin/
+    - vendor/

@@ -1,8 +1,50 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
-    "allow": ["Bash(git status)", "Bash(git diff --check)", "Bash(git diff --cached --check)", "Bash(sort*)", "Bash(ls*)"],
-    "ask": ["Bash(rm *)", "Bash(rmdir *)", "Bash(chmod *)", "Bash(chown *)", "Bash(git clean *)", "Bash(git reset *)", "Bash(git push *)"]
+    "allow": [
+      "Bash(npx jest*)",
+      "Bash(npx tsx*)",
+      "Bash(npx tsc*)",
+      "Bash(node *)",
+      "Bash(git *)",
+      "Bash(gh pr *)",
+      "Bash(gh api *)",
+      "Bash(awk *)",
+      "Bash(sort*)",
+      "Bash(ls*)",
+      "Bash(cat*)",
+      "Bash(wc*)",
+      "Bash(find*)",
+      "Bash(grep*)",
+      "Read(/tmp/**)"
+    ],
+    "deny": ["Bash(git commit*)", "Bash(git merge*)", "Bash(git push*)"],
+    "ask": [
+      "Bash(rm *)",
+      "Bash(rmdir *)",
+      "Bash(shred *)",
+      "Bash(unlink *)",
+      "Bash(dd *)",
+      "Bash(mkfs *)",
+      "Bash(fdisk *)",
+      "Bash(chmod *)",
+      "Bash(chown *)",
+      "Bash(npm i *)",
+      "Bash(npm install *)",
+      "Bash(docker *)",
+      "Bash(kubectl *)"
+    ]
   },
-  "plansDirectory": "./.claude/plans"
+  "enabledPlugins": {
+    "claude-md-management@claude-plugins-official": true,
+    "remember@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": true
+  },
+  "worktree": {
+    "symlinkDirectories": ["node_modules"]
+  },
+  "plansDirectory": "./.claude/plans",
+  "env": {
+    "NODE_ENV": "development"
+  }
 }
