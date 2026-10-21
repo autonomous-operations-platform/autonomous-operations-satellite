@@ -6,7 +6,7 @@ For more details, check out [software design documentation on the Autonomous Ope
 ## Where things live
 Autonomous Operations spans three repositories:
 
-- **`aos-framework`** The Collector, Observer, and Operator interfaces, the store, and the `satellite.Run` orchestrator. See the [API reference](#api-reference) below.
+- **`aos-framework`** The Collector, Observer, and Operator interfaces, the store, and the `satellite.Run` orchestrator.
 - **[`hello-world-satellite`](https://github.com/autonomous-operations/hello-world-satellite)** — a demo satellite built on this framework. Start with its [Getting Started guide](https://github.com/autonomous-operations/hello-world-satellite/blob/main/GETTING-STARTED.md).
 
 ## Development setup
