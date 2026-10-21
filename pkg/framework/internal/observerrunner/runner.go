@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.tools.sap/autonomous-operations/aos-framework/pkg/framework/observer"
-	"github.tools.sap/autonomous-operations/aos-framework/pkg/framework/store"
+	"github.com/autonomous-operations/aos-framework/pkg/framework/observer"
+	"github.com/autonomous-operations/aos-framework/pkg/framework/store"
 )
 
 type Runner struct {

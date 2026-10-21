@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.tools.sap/autonomous-operations/aos-framework/pkg/framework/store"
+	"github.com/autonomous-operations/aos-framework/pkg/framework/store"
 )
 
 // Config holds optional Store configuration. A nil Config uses defaults.

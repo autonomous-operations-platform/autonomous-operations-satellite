@@ -3,7 +3,7 @@ package store
 import (
 	"time"
 
-	"github.tools.sap/autonomous-operations/aos-framework/pkg/uuidv7"
+	"github.com/autonomous-operations/aos-framework/pkg/uuidv7"
 )
 
 var (

@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.tools.sap/autonomous-operations/aos-framework/pkg/framework/store"
+	"github.com/autonomous-operations/aos-framework/pkg/framework/store"
 )
 
 const (

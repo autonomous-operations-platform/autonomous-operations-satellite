@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.tools.sap/autonomous-operations/aos-framework/pkg/uuidv7"
+	"github.com/autonomous-operations/aos-framework/pkg/uuidv7"
 )
 
 var uuidv7Re = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)

@@ -6,11 +6,11 @@ import (
 	"sync"
 	"testing"
 
-	"github.tools.sap/autonomous-operations/aos-framework/pkg/framework/collector"
-	"github.tools.sap/autonomous-operations/aos-framework/pkg/framework/observer"
-	"github.tools.sap/autonomous-operations/aos-framework/pkg/framework/operator"
-	"github.tools.sap/autonomous-operations/aos-framework/pkg/framework/registry"
-	"github.tools.sap/autonomous-operations/aos-framework/pkg/framework/store"
+	"github.com/autonomous-operations/aos-framework/pkg/framework/collector"
+	"github.com/autonomous-operations/aos-framework/pkg/framework/observer"
+	"github.com/autonomous-operations/aos-framework/pkg/framework/operator"
+	"github.com/autonomous-operations/aos-framework/pkg/framework/registry"
+	"github.com/autonomous-operations/aos-framework/pkg/framework/store"
 )
 
 // Minimal fakes — satisfy the interfaces with the least possible code.

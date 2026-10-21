@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.tools.sap/autonomous-operations/aos-framework/pkg/framework/internal/operatorrunner"
-	"github.tools.sap/autonomous-operations/aos-framework/pkg/framework/store"
-	"github.tools.sap/autonomous-operations/aos-framework/pkg/store/memstore"
+	"github.com/autonomous-operations/aos-framework/pkg/framework/internal/operatorrunner"
+	"github.com/autonomous-operations/aos-framework/pkg/framework/store"
+	"github.com/autonomous-operations/aos-framework/pkg/store/memstore"
 )
 
 // safeBuf is an io.Writer whose Write and String methods are mutually

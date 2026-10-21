@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.tools.sap/autonomous-operations/aos-framework/pkg/framework/store"
-	"github.tools.sap/autonomous-operations/aos-framework/pkg/store/memstore"
+	"github.com/autonomous-operations/aos-framework/pkg/framework/store"
+	"github.com/autonomous-operations/aos-framework/pkg/store/memstore"
 )
 
 func recvTelemetry(t *testing.T, ch <-chan store.TelemetryRecord) store.TelemetryRecord {

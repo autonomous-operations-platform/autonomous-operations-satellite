@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.tools.sap/autonomous-operations/aos-framework/pkg/framework/store"
-	"github.tools.sap/autonomous-operations/aos-framework/pkg/uuidv7"
+	"github.com/autonomous-operations/aos-framework/pkg/framework/store"
+	"github.com/autonomous-operations/aos-framework/pkg/uuidv7"
 )
 
 // waitForDoris retries until Doris accepts connections and can execute DDL.

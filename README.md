@@ -1,14 +1,13 @@
 # AOS Satellite Framework
 
 The Satellite is the per-node service in the Autonomous Operations stack. It gathers data from data center infrastructure (metrics, logs, traces) via **collectors**, persists it to [Apache Doris](https://doris.apache.org/), and drives a pipeline of **observers** (pattern detectors that emit insights) and **operators** (that react to insights with remediation actions).
-For more details, check out [software design documentation on the Autonomous Operations Satellite](https://pages.github.tools.sap/autonomous-operations/autonomous-operations/#/architecture/software-design/autonomous-operations/autonomous-operations-satellite).
+For more details, check out [software design documentation on the Autonomous Operations Satellite](https://pages.github.com/autonomous-operations/autonomous-operations/#/architecture/software-design/autonomous-operations/autonomous-operations-satellite).
 
 ## Where things live
 Autonomous Operations spans three repositories:
 
 - **`aos-framework`** The Collector, Observer, and Operator interfaces, the store, and the `satellite.Run` orchestrator. See the [API reference](#api-reference) below.
-- **[`aos-demo`](https://github.tools.sap/autonomous-operations/aos-demo)** — concrete example Satellites built on this framework. Start with its [Getting Started guide](https://github.tools.sap/autonomous-operations/aos-demo/blob/main/satellites/hello-world-satellite/GETTING-STARTED.md).
-- **[`autonomous-operations`](https://github.tools.sap/autonomous-operations/autonomous-operations)** — the architecture specification, concepts, and development guidelines. See [How to Structure Satellite Repositories](https://pages.github.tools.sap/autonomous-operations/autonomous-operations/#/internal/development%20guidelines/how-to-structure-satellite-repositories).
+- **[`hello-world-satellite`](https://github.com/autonomous-operations/hello-world-satellite)** — a demo satellite built on this framework. Start with its [Getting Started guide](https://github.com/autonomous-operations/hello-world-satellite/blob/main/GETTING-STARTED.md).
 
 ## Development setup
 
@@ -86,9 +85,8 @@ go tool cover -html=merged.out
 
 ## Building a Satellite
 
-New to the framework? The [Getting Started guide](https://github.tools.sap/autonomous-operations/aos-demo/blob/main/satellites/hello-world-satellite/GETTING-STARTED.md)
-in `aos-demo` walks you through building a working Satellite by hand, from a
-Collector to a running `main`.
+New to the framework? The [Getting Started guide](https://github.com/autonomous-operations/hello-world-satellite/blob/main/GETTING-STARTED.md)
+in `hello-world-satellite` walks you through building a working Satellite by hand.
 
 A Satellite orchestrates three kinds of components:
 

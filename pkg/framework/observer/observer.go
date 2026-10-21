@@ -4,7 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.tools.sap/autonomous-operations/aos-framework/pkg/framework/store"
+	"github.com/autonomous-operations/aos-framework/pkg/framework/store"
 )
 
 type Observer interface {
