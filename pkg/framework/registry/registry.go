@@ -3,9 +3,9 @@ package registry
 import (
 	"sync"
 
-	"github.com/autonomous-operations/aos-framework/pkg/framework/collector"
-	"github.com/autonomous-operations/aos-framework/pkg/framework/observer"
-	"github.com/autonomous-operations/aos-framework/pkg/framework/operator"
+	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/framework/collector"
+	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/framework/observer"
+	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/framework/operator"
 )
 
 var (

@@ -19,7 +19,7 @@ git clone \
   --filter=blob:none \
   --no-checkout \
   --depth=1 \
-  https://github.com/autonomous-operations/autonomous-operations \
+  https://github.com/autonomous-operations-platform/autonomous-operations \
   .cache/ao-spec
 
 git -C .cache/ao-spec sparse-checkout set content

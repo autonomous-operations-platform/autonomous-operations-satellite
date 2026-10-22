@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/autonomous-operations/aos-framework/pkg/framework/registry"
-	"github.com/autonomous-operations/aos-framework/pkg/framework/satellite"
-	"github.com/autonomous-operations/aos-framework/pkg/framework/store"
-	"github.com/autonomous-operations/aos-framework/pkg/store/memstore"
+	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/framework/registry"
+	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/framework/satellite"
+	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/framework/store"
+	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/store/memstore"
 )
 
 // ---------------------------------------------------------------------------

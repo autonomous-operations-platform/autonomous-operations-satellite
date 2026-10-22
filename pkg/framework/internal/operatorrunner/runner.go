@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/autonomous-operations/aos-framework/pkg/framework/operator"
-	"github.com/autonomous-operations/aos-framework/pkg/framework/store"
+	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/framework/operator"
+	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/framework/store"
 )
 
 type Runner struct {

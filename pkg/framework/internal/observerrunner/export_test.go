@@ -3,7 +3,7 @@ package observerrunner
 import (
 	"log/slog"
 
-	"github.com/autonomous-operations/aos-framework/pkg/framework/store"
+	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/framework/store"
 )
 
 func NewStoreWrapper(inner store.Store, observerName string) store.ObserverStore {

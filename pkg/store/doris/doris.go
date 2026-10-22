@@ -14,8 +14,8 @@ import (
 
 	_ "github.com/go-mysql-org/go-mysql/driver"
 
-	"github.com/autonomous-operations/aos-framework/pkg/framework/store"
-	"github.com/autonomous-operations/aos-framework/pkg/uuidv7"
+	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/framework/store"
+	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/uuidv7"
 )
 
 const (

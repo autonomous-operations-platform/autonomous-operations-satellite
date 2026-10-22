@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/autonomous-operations/aos-framework/pkg/framework/internal/collectorstorewrapper"
-	"github.com/autonomous-operations/aos-framework/pkg/framework/internal/observerrunner"
-	"github.com/autonomous-operations/aos-framework/pkg/framework/internal/operatorrunner"
-	"github.com/autonomous-operations/aos-framework/pkg/framework/registry"
-	"github.com/autonomous-operations/aos-framework/pkg/framework/store"
+	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/framework/internal/collectorstorewrapper"
+	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/framework/internal/observerrunner"
+	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/framework/internal/operatorrunner"
+	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/framework/registry"
+	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/framework/store"
 )
 
 var (

@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/autonomous-operations/aos-framework/pkg/framework/store"
+	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/framework/store"
 )
 
 const (

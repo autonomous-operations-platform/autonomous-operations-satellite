@@ -18,7 +18,7 @@ If `.cache/context/` does not exist:
 git clone \
   --filter=blob:none \
   --depth=1 \
-  https://github.com/autonomous-operations/autonomous-operations \
+  https://github.com/autonomous-operations-platform/autonomous-operations \
   .cache/context
 ```
 

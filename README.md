@@ -1,13 +1,13 @@
 # AOS Satellite Framework
 
 The Satellite is the per-node service in the Autonomous Operations stack. It gathers data from data center infrastructure (metrics, logs, traces) via **collectors**, persists it to [Apache Doris](https://doris.apache.org/), and drives a pipeline of **observers** (pattern detectors that emit insights) and **operators** (that react to insights with remediation actions).
-For more details, check out [software design documentation on the Autonomous Operations Satellite](https://pages.github.com/autonomous-operations/autonomous-operations/#/architecture/software-design/autonomous-operations/autonomous-operations-satellite).
+For more details, check out [software design documentation on the Autonomous Operations Satellite](https://pages.github.com/autonomous-operations-platform/autonomous-operations/#/architecture/software-design/autonomous-operations/autonomous-operations-satellite).
 
 ## Where things live
 Autonomous Operations spans three repositories:
 
 - **`aos-framework`** The Collector, Observer, and Operator interfaces, the store, and the `satellite.Run` orchestrator.
-- **[`hello-world-satellite`](https://github.com/autonomous-operations/hello-world-satellite)** — a demo satellite built on this framework. Start with its [Getting Started guide](https://github.com/autonomous-operations/hello-world-satellite/blob/main/GETTING-STARTED.md).
+- **[`hello-world-satellite`](https://github.com/autonomous-operations-platform/hello-world-satellite)** — a demo satellite built on this framework. Start with its [Getting Started guide](https://github.com/autonomous-operations-platform/hello-world-satellite/blob/main/GETTING-STARTED.md).
 
 ## Development setup
 
@@ -85,7 +85,7 @@ go tool cover -html=merged.out
 
 ## Building a Satellite
 
-New to the framework? The [Getting Started guide](https://github.com/autonomous-operations/hello-world-satellite/blob/main/GETTING-STARTED.md)
+New to the framework? The [Getting Started guide](https://github.com/autonomous-operations-platform/hello-world-satellite/blob/main/GETTING-STARTED.md)
 in `hello-world-satellite` walks you through building a working Satellite by hand.
 
 A Satellite orchestrates three kinds of components:

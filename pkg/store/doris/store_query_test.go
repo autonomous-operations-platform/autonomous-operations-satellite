@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/autonomous-operations/aos-framework/pkg/framework/store"
-	"github.com/autonomous-operations/aos-framework/pkg/uuidv7"
+	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/framework/store"
+	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/uuidv7"
 )
 
 var fakeRowsRegistry sync.Map

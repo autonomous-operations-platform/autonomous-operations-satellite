@@ -3,7 +3,7 @@ package store_test
 import (
 	"testing"
 
-	"github.com/autonomous-operations/aos-framework/pkg/framework/store"
+	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/framework/store"
 )
 
 // ---------------------------------------------------------------------------

@@ -6,11 +6,11 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/autonomous-operations/aos-framework/pkg/framework/collector"
-	"github.com/autonomous-operations/aos-framework/pkg/framework/observer"
-	"github.com/autonomous-operations/aos-framework/pkg/framework/operator"
-	"github.com/autonomous-operations/aos-framework/pkg/framework/registry"
-	"github.com/autonomous-operations/aos-framework/pkg/framework/store"
+	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/framework/collector"
+	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/framework/observer"
+	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/framework/operator"
+	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/framework/registry"
+	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/framework/store"
 )
 
 // Minimal fakes — satisfy the interfaces with the least possible code.
