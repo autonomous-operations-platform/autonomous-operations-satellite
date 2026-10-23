@@ -7,7 +7,9 @@ import (
 )
 
 var (
-	uuidGenerate    func() string          = uuidv7.Generate
+	//nolint:gochecknoglobals // globals are acceptable since this is a global framework
+	uuidGenerate func() string = uuidv7.Generate
+	//nolint:gochecknoglobals // globals are acceptable since this is a global framework
 	uuidExtractTime func(string) time.Time = uuidv7.ExtractTime
 )
 

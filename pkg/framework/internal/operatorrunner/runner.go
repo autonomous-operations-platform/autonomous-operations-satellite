@@ -50,7 +50,7 @@ func (r *Runner) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("operator %q: subscribe: %w", r.operator.Name(), err)
 	}
-	r.logger.Info("subscribed — waiting for insights", "patterns", f.Patterns, "severities", f.Severities)
+	r.logger.InfoContext(ctx, "subscribed — waiting for insights", "patterns", f.Patterns, "severities", f.Severities)
 	for {
 		select {
 		case <-ctx.Done():
@@ -76,13 +76,13 @@ func (r *Runner) handleInsight(ctx context.Context, insight store.Insight) {
 		State:        store.StateStarted,
 		Timestamp:    startedID.Time(),
 	}); werr != nil {
-		r.logger.Error("failed to write started RecordedAction", "err", werr)
+		r.logger.ErrorContext(ctx, "failed to write started RecordedAction", "err", werr)
 	}
 
 	defer func() {
 		if rec := recover(); rec != nil {
 			msg := fmt.Sprintf("panic: %v", rec)
-			r.logger.Error("operator panicked", "err", msg)
+			r.logger.ErrorContext(ctx, "operator panicked", "err", msg)
 			panicID := r.newID()
 			_ = r.store.AddRecordedAction(ctx, store.RecordedAction{
 				ID:           panicID,
@@ -97,7 +97,7 @@ func (r *Runner) handleInsight(ctx context.Context, insight store.Insight) {
 
 	execLogger := r.logger.With("execution_id", executionID, "insight_id", insight.ID)
 
-	execLogger.Info("processing Insight",
+	execLogger.InfoContext(ctx, "processing Insight",
 		"pattern", insight.Pattern,
 		"severity", insight.Severity,
 	)
@@ -120,14 +120,14 @@ func (r *Runner) handleInsight(ctx context.Context, insight store.Insight) {
 		Timestamp:    id.Time(),
 	})
 	if werr != nil {
-		execLogger.Error("failed to write final RecordedAction", "err", werr)
+		execLogger.ErrorContext(ctx, "failed to write final RecordedAction", "err", werr)
 	}
 
 	if err != nil {
-		execLogger.Error("execution failed", "err", err, "state", state)
+		execLogger.ErrorContext(ctx, "execution failed", "err", err, "state", state)
 		return
 	}
-	execLogger.Info("RecordedAction written", "recorded_action_id", id, "state", state)
+	execLogger.InfoContext(ctx, "RecordedAction written", "recorded_action_id", id, "state", state)
 }
 
 type storeWrapper struct {
@@ -155,7 +155,7 @@ func (w *storeWrapper) AddActionLog(ctx context.Context, log store.NewActionLog)
 		Timestamp:   id.Time(),
 	})
 	if err == nil {
-		w.logger.Info("ActionLog written",
+		w.logger.InfoContext(ctx, "ActionLog written",
 			"action_log_id", id, "execution_id", w.executionID,
 			"step_id", log.StepID, "state", log.State, "description", log.Description)
 	}

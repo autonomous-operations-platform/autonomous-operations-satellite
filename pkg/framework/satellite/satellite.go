@@ -61,12 +61,12 @@ func Run(ctx context.Context, cfg Config) error {
 	opRunners := make([]*operatorrunner.Runner, len(operators))
 	for i, op := range operators {
 		opLog := slog.Default().With("component", "operator", "name", op.Name())
-		opLog.Info("starting")
+		opLog.InfoContext(ctx, "starting")
 		runner := operatorrunner.New(st, op)
 		opRunners[i] = runner
 		go func(r *operatorrunner.Runner, log *slog.Logger) {
 			if err := r.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
-				log.Error("operator exited", "err", err)
+				log.ErrorContext(ctx, "operator exited", "err", err)
 			}
 		}(runner, opLog)
 	}
@@ -81,12 +81,12 @@ func Run(ctx context.Context, cfg Config) error {
 	obsRunners := make([]*observerrunner.Runner, len(observers))
 	for i, obs := range observers {
 		obsLog := slog.Default().With("component", "observer", "name", obs.Name())
-		obsLog.Info("starting")
+		obsLog.InfoContext(ctx, "starting")
 		runner := observerrunner.New(st, obs)
 		obsRunners[i] = runner
 		go func(r *observerrunner.Runner, log *slog.Logger) {
 			if err := r.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
-				log.Error("observer exited", "err", err)
+				log.ErrorContext(ctx, "observer exited", "err", err)
 			}
 		}(runner, obsLog)
 	}
@@ -101,17 +101,17 @@ func Run(ctx context.Context, cfg Config) error {
 	for _, c := range collectors {
 		clog := slog.Default().With("component", "collector", "name", c.Name())
 		cst := collectorstorewrapper.New(st, clog)
-		clog.Info("setting up collector")
+		clog.InfoContext(ctx, "setting up collector")
 		c.Setup(ctx, clog, cst)
 	}
 
-	satLog.Info("running",
+	satLog.InfoContext(ctx, "running",
 		"collectors", len(collectors),
 		"observers", len(observers),
 		"operators", len(operators),
 	)
 	<-ctx.Done()
-	satLog.Info("shutting down")
+	satLog.InfoContext(ctx, "shutting down")
 	return nil
 }
 

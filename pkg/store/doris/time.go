@@ -27,6 +27,7 @@ func (d *dorisTime) Scan(src any) error {
 	}
 }
 
+//nolint:gochecknoglobals // globals are acceptable since this is a global framework
 var dtLayouts = []string{
 	"2006-01-02 15:04:05.999999999",
 	"2006-01-02 15:04:05",

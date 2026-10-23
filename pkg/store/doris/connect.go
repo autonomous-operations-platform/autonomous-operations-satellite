@@ -42,7 +42,7 @@ func Connect(ctx context.Context, p Params, logger *slog.Logger) (*DorisStore, e
 		if err == nil {
 			break
 		}
-		logger.Warn("waiting for Doris", "component", "store", "attempt", i+1, "max", 30, "err", err)
+		logger.WarnContext(ctx, "waiting for Doris", "component", "store", "attempt", i+1, "max", 30, "err", err)
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
@@ -59,7 +59,7 @@ func Connect(ctx context.Context, p Params, logger *slog.Logger) (*DorisStore, e
 		if err == nil {
 			break
 		}
-		logger.Warn("waiting for Doris backend", "component", "store", "attempt", i+1, "max", 30, "err", err)
+		logger.WarnContext(ctx, "waiting for Doris backend", "component", "store", "attempt", i+1, "max", 30, "err", err)
 		select {
 		case <-ctx.Done():
 			_ = db.Close()
@@ -80,11 +80,11 @@ func openDB(p Params) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := adminDB.Ping(); err != nil {
+	if err = adminDB.Ping(); err != nil {
 		_ = adminDB.Close()
 		return nil, err
 	}
-	if _, err := adminDB.Exec("CREATE DATABASE IF NOT EXISTS `" + p.DB + "`"); err != nil {
+	if _, err = adminDB.Exec("CREATE DATABASE IF NOT EXISTS `" + p.DB + "`"); err != nil {
 		_ = adminDB.Close()
 		return nil, fmt.Errorf("create database: %w", err)
 	}
@@ -94,7 +94,7 @@ func openDB(p Params) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := db.Ping(); err != nil {
+	if err = db.Ping(); err != nil {
 		_ = db.Close()
 		return nil, err
 	}

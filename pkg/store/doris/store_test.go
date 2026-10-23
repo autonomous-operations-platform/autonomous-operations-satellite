@@ -14,6 +14,7 @@ import (
 	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/framework/store"
 )
 
+//nolint:gochecknoinits // this initializes a test environment
 func init() {
 	sql.Register("discard", &discardDriver{})
 }
@@ -232,6 +233,7 @@ func TestClose_closesAllSubscriberTypes(t *testing.T) {
 	}
 }
 
+//nolint:gochecknoglobals // globals are acceptable since this is a global framework
 var addOps = []struct {
 	name string
 	add  func(*DorisStore) error
@@ -247,6 +249,7 @@ var addOps = []struct {
 	}},
 }
 
+//nolint:gochecknoglobals // globals are acceptable since this is a global framework
 var subscribeOps = []struct {
 	name      string
 	subErr    func(*DorisStore, context.Context) error

@@ -16,10 +16,10 @@ import (
 	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/uuidv7"
 )
 
-//nolint:gochecknoglobals
+//nolint:gochecknoglobals // this is a global used inside a test
 var fakeRowsRegistry sync.Map
 
-//nolint:gochecknoinits
+//nolint:gochecknoinits // this initializes a test
 func init() {
 	sql.Register("fakerows", rowsDriver{})
 	sql.Register("failexec", failDriver{})
@@ -403,7 +403,7 @@ type (
 
 var errRowsIterator = errors.New("rows: iterator error")
 
-//nolint:gochecknoinits
+//nolint:gochecknoinits // this initializes a test
 func init() {
 	sql.Register("rowsiterr", rowsIterErrDriver{})
 }
@@ -471,7 +471,7 @@ type (
 	scanErrRowsObj struct{ done bool }
 )
 
-//nolint:gochecknoinits
+//nolint:gochecknoinits // this initializes a test
 func init() {
 	sql.Register("scanerr", scanErrDriver{})
 }

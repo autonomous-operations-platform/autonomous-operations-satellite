@@ -228,7 +228,7 @@ func (s *DorisStore) flushTelemetry(ctx context.Context, batch []store.Telemetry
 	)
 	if err != nil {
 		for _, rec := range batch {
-			s.log.Error("doris write telemetry failed", "id", rec.ID)
+			s.log.ErrorContext(ctx, "doris write telemetry failed", "id", rec.ID)
 		}
 		return err
 	}
@@ -253,7 +253,7 @@ func (s *DorisStore) SubscribeTelemetry(ctx context.Context, filter store.Teleme
 		drops := sub.sc.Drops()
 		s.mu.Unlock()
 		if drops > 0 {
-			s.log.Warn("subscriber dropped records (back-pressure)", "drops", drops)
+			s.log.WarnContext(ctx, "subscriber dropped records (back-pressure)", "drops", drops)
 		}
 	}()
 
@@ -283,6 +283,10 @@ func (s *DorisStore) QueryTelemetryByTime(ctx context.Context, q store.Telemetry
 		args = append(args, timeArg(q.End))
 	}
 	if conds, cargs := attrConds(q.Attributes); len(conds) > 0 {
+		// Attribute keys are identifiers and cannot be bound as SQL parameters; they
+		// are constrained to [A-Za-z0-9_.:/-] by attrKeyRE above, which excludes every
+		// character needed to break out of the attributes['...'] literal.
+		//nolint:gosec // key is allowlist-validated
 		qry += " AND " + strings.Join(conds, " AND ")
 		args = append(args, cargs...)
 	}
@@ -337,6 +341,10 @@ func (s *DorisStore) QueryTelemetryFromCursor(ctx context.Context, q store.Telem
 		args = append(args, cargs...)
 	}
 	if len(conds) > 0 {
+		// Attribute keys are identifiers and cannot be bound as SQL parameters; they
+		// are constrained to [A-Za-z0-9_.:/-] by attrKeyRE above, which excludes every
+		// character needed to break out of the attributes['...'] literal.
+		//nolint:gosec // key is allowlist-validated
 		qry += " WHERE " + strings.Join(conds, " AND ")
 	}
 	qry += " ORDER BY id ASC LIMIT ?"
@@ -420,7 +428,7 @@ func (s *DorisStore) flushInsights(ctx context.Context, batch []store.Insight) e
 	)
 	if err != nil {
 		for _, ins := range batch {
-			s.log.Error("doris write insight failed", "id", ins.ID, "observer", ins.ObserverName)
+			s.log.ErrorContext(ctx, "doris write insight failed", "id", ins.ID, "observer", ins.ObserverName)
 		}
 		return err
 	}
@@ -479,7 +487,7 @@ func (s *DorisStore) flushRecordedActions(ctx context.Context, batch []store.Rec
 	)
 	if err != nil {
 		for _, ra := range batch {
-			s.log.Error("doris write recorded action failed", "id", ra.ID, "operator", ra.OperatorName)
+			s.log.ErrorContext(ctx, "doris write recorded action failed", "id", ra.ID, "operator", ra.OperatorName)
 		}
 		return err
 	}
@@ -517,7 +525,7 @@ func (s *DorisStore) flushActionLogs(ctx context.Context, batch []store.ActionLo
 	)
 	if err != nil {
 		for _, al := range batch {
-			s.log.Error("doris write action log failed", "id", al.ID, "execution_id", al.ExecutionID)
+			s.log.ErrorContext(ctx, "doris write action log failed", "id", al.ID, "execution_id", al.ExecutionID)
 		}
 		return err
 	}

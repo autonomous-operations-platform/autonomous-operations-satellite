@@ -9,13 +9,13 @@ import (
 )
 
 var (
-	//nolint:gochecknoglobals
+	//nolint:gochecknoglobals // globals are acceptable since this is a global framework
 	mu sync.RWMutex
-	//nolint:gochecknoglobals
+	//nolint:gochecknoglobals // globals are acceptable since this is a global framework
 	collectors []collector.Collector
-	//nolint:gochecknoglobals
+	//nolint:gochecknoglobals // globals are acceptable since this is a global framework
 	observers []observer.Observer
-	//nolint:gochecknoglobals
+	//nolint:gochecknoglobals // globals are acceptable since this is a global framework
 	operators []operator.Operator
 )
 

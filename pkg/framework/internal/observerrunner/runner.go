@@ -42,7 +42,7 @@ func (r *Runner) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("observer %q: subscribe: %w", r.observer.Name(), err)
 	}
-	r.logger.Info("subscribed — waiting for telemetry", "signal", f.Signal, "attrs", f.Attributes)
+	r.logger.InfoContext(ctx, "subscribed — waiting for telemetry", "signal", f.Signal, "attrs", f.Attributes)
 	for {
 		select {
 		case <-ctx.Done():
@@ -53,7 +53,7 @@ func (r *Runner) Run(ctx context.Context) error {
 			}
 			wrapped := &storeWrapper{inner: r.store, observerName: r.observer.Name(), logger: r.logger}
 			if err := r.observer.Detect(ctx, r.logger, rec, wrapped); err != nil {
-				r.logger.Error("detect error", "err", err)
+				r.logger.ErrorContext(ctx, "detect error", "err", err)
 			}
 		}
 	}
@@ -87,7 +87,7 @@ func (w *storeWrapper) AddInsight(ctx context.Context, ni store.NewInsight) (sto
 		CreatedAt:       id.Time(),
 	})
 	if err == nil {
-		w.logger.Info("Insight written",
+		w.logger.InfoContext(ctx, "Insight written",
 			"insight_id", id, "pattern", ni.Pattern, "severity", ni.Severity, "summary", ni.Summary)
 	}
 	return id, err

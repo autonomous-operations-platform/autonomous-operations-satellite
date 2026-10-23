@@ -16,7 +16,7 @@ type uuidGen struct {
 	seqLo  uint64
 }
 
-//nolint:gochecknoglobals
+//nolint:gochecknoglobals // globals are acceptable since this is a global framework with global state
 var gen = &uuidGen{}
 
 func Generate() string {

@@ -50,6 +50,6 @@ func (w *StoreWrapper) AddTelemetry(ctx context.Context, records []store.NewTele
 	if err := w.inner.AddTelemetry(ctx, full); err != nil {
 		return nil, err
 	}
-	w.logger.Debug("Telemetry written", "count", len(records))
+	w.logger.DebugContext(ctx, "Telemetry written", "count", len(records))
 	return ids, nil
 }
