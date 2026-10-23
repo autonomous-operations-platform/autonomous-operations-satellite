@@ -1,0 +1,2 @@
+[profile]
+model_instructions_file = ".claude/agents/code-reviewer.md"

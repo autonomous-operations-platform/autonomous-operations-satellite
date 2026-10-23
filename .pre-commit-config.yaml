@@ -1,0 +1,16 @@
+repos:
+  - repo: https://github.com/golangci/golangci-lint
+    rev: v2.14.0
+    hooks:
+      - id: golangci-lint
+
+  - repo: local
+    hooks:
+      - id: commitlint
+        name: Commit message lint
+        language: node
+        entry: npx --no-install commitlint --edit
+        stages: [commit-msg]
+        additional_dependencies:
+          - '@commitlint/cli@21.2.2'
+          - '@commitlint/config-conventional@21.2.2'
