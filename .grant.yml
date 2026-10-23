@@ -46,8 +46,11 @@ ignore-packages:
 
   # golangci/golangci-lint-action licensed under MIT
   - golangci/golangci-lint-action
-  # golang/govulncheck-action licensed under BSD 3-Clause
+  # licensed under BSD 3-Clause
   - golang/govulncheck-action
+  - golang.org/x/tools/cmd/cover
+  - golang.org/x/tools
+  - golang.org/x/sys
 
   # marocchino/sticky-pull-request-comment licensed under MIT
   - marocchino/sticky-pull-request-comment
