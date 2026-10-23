@@ -69,6 +69,13 @@ type spyStore struct {
 	telCh    chan store.TelemetryRecord
 	subErr   error
 	insights []store.Insight
+
+	// Query behaviour is programmable so pass-through tests can assert that the
+	// storeWrapper forwards the query and returns the inner result unchanged.
+	gotTimeQuery   store.TelemetryTimeRangeQuery
+	gotCursorQuery store.TelemetryCursorQuery
+	queryResult    store.QueryResult[store.TelemetryRecord]
+	queryErr       error
 }
 
 func newSpyStore() *spyStore {
@@ -92,11 +99,13 @@ func (s *spyStore) SubscribeInsights(context.Context, store.InsightFilter) (<-ch
 }
 func (s *spyStore) AddActionLog(context.Context, store.ActionLog) error           { return nil }
 func (s *spyStore) AddRecordedAction(context.Context, store.RecordedAction) error { return nil }
-func (s *spyStore) QueryTelemetryByTime(context.Context, store.TelemetryTimeRangeQuery) (store.QueryResult[store.TelemetryRecord], error) {
-	return store.QueryResult[store.TelemetryRecord]{}, nil
+func (s *spyStore) QueryTelemetryByTime(_ context.Context, q store.TelemetryTimeRangeQuery) (store.QueryResult[store.TelemetryRecord], error) {
+	s.gotTimeQuery = q
+	return s.queryResult, s.queryErr
 }
-func (s *spyStore) QueryTelemetryFromCursor(context.Context, store.TelemetryCursorQuery) (store.QueryResult[store.TelemetryRecord], error) {
-	return store.QueryResult[store.TelemetryRecord]{}, nil
+func (s *spyStore) QueryTelemetryFromCursor(_ context.Context, q store.TelemetryCursorQuery) (store.QueryResult[store.TelemetryRecord], error) {
+	s.gotCursorQuery = q
+	return s.queryResult, s.queryErr
 }
 func (s *spyStore) Close() {}
 
@@ -353,4 +362,80 @@ func TestRun_AddInsight_LogsAtInfo(t *testing.T) {
 			t.Errorf("log output missing %s\ngot: %s", want, out)
 		}
 	}
+}
+
+func TestRun_ReadyClosedAfterSubscribe(t *testing.T) {
+	runner := observerrunner.New(newSpyStore(), newSpyObs("o", store.TelemetryFilter{}))
+	cancel, _ := startRunner(t, runner.Run)
+	defer cancel()
+
+	select {
+	case <-runner.Ready():
+	case <-time.After(2 * time.Second):
+		t.Fatal("Ready channel not closed after subscribe")
+	}
+}
+
+func TestStoreWrapper_QueryTelemetryByTime_ForwardsToInner(t *testing.T) {
+	want := store.QueryResult[store.TelemetryRecord]{Records: []store.TelemetryRecord{{ID: "r1"}}}
+	q := store.TelemetryTimeRangeQuery{Start: time.UnixMilli(1), End: time.UnixMilli(2)}
+
+	t.Run("success", func(t *testing.T) {
+		spy := newSpyStore()
+		spy.queryResult = want
+		w := observerrunner.NewStoreWrapper(spy, "obs")
+
+		got, err := w.QueryTelemetryByTime(context.Background(), q)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !spy.gotTimeQuery.Start.Equal(q.Start) || !spy.gotTimeQuery.End.Equal(q.End) {
+			t.Errorf("inner got query %+v, want %+v", spy.gotTimeQuery, q)
+		}
+		if len(got.Records) != 1 || got.Records[0].ID != "r1" {
+			t.Errorf("result not forwarded unchanged: got %+v", got)
+		}
+	})
+
+	t.Run("error", func(t *testing.T) {
+		spy := newSpyStore()
+		spy.queryErr = store.ErrStoreClosed
+		w := observerrunner.NewStoreWrapper(spy, "obs")
+
+		if _, err := w.QueryTelemetryByTime(context.Background(), q); !errors.Is(err, store.ErrStoreClosed) {
+			t.Errorf("want ErrStoreClosed, got %v", err)
+		}
+	})
+}
+
+func TestStoreWrapper_QueryTelemetryFromCursor_ForwardsToInner(t *testing.T) {
+	want := store.QueryResult[store.TelemetryRecord]{Records: []store.TelemetryRecord{{ID: "r2"}}}
+	q := store.TelemetryCursorQuery{AfterID: "cursor-1", Count: 5}
+
+	t.Run("success", func(t *testing.T) {
+		spy := newSpyStore()
+		spy.queryResult = want
+		w := observerrunner.NewStoreWrapper(spy, "obs")
+
+		got, err := w.QueryTelemetryFromCursor(context.Background(), q)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if spy.gotCursorQuery.AfterID != q.AfterID || spy.gotCursorQuery.Count != q.Count {
+			t.Errorf("inner got query %+v, want %+v", spy.gotCursorQuery, q)
+		}
+		if len(got.Records) != 1 || got.Records[0].ID != "r2" {
+			t.Errorf("result not forwarded unchanged: got %+v", got)
+		}
+	})
+
+	t.Run("error", func(t *testing.T) {
+		spy := newSpyStore()
+		spy.queryErr = store.ErrStoreClosed
+		w := observerrunner.NewStoreWrapper(spy, "obs")
+
+		if _, err := w.QueryTelemetryFromCursor(context.Background(), q); !errors.Is(err, store.ErrStoreClosed) {
+			t.Errorf("want ErrStoreClosed, got %v", err)
+		}
+	})
 }

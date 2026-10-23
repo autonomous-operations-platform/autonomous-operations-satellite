@@ -110,6 +110,14 @@ type spyStore struct {
 	subErr          error
 	recordedActions []store.RecordedAction
 	actionLogs      []store.ActionLog
+
+	addRecordedActionErr []error
+	recordedActionCalls  int
+
+	gotTimeQuery   store.TelemetryTimeRangeQuery
+	gotCursorQuery store.TelemetryCursorQuery
+	queryResult    store.QueryResult[store.TelemetryRecord]
+	queryErr       error
 }
 
 func newSpyStore() *spyStore {
@@ -121,6 +129,11 @@ func (s *spyStore) SubscribeInsights(_ context.Context, _ store.InsightFilter) (
 }
 func (s *spyStore) AddRecordedAction(_ context.Context, a store.RecordedAction) error {
 	s.recordedActions = append(s.recordedActions, a)
+	call := s.recordedActionCalls
+	s.recordedActionCalls++
+	if call < len(s.addRecordedActionErr) {
+		return s.addRecordedActionErr[call]
+	}
 	return nil
 }
 
@@ -136,11 +149,13 @@ func (s *spyStore) AddActionLog(_ context.Context, al store.ActionLog) error {
 	s.actionLogs = append(s.actionLogs, al)
 	return nil
 }
-func (s *spyStore) QueryTelemetryByTime(context.Context, store.TelemetryTimeRangeQuery) (store.QueryResult[store.TelemetryRecord], error) {
-	return store.QueryResult[store.TelemetryRecord]{}, nil
+func (s *spyStore) QueryTelemetryByTime(_ context.Context, q store.TelemetryTimeRangeQuery) (store.QueryResult[store.TelemetryRecord], error) {
+	s.gotTimeQuery = q
+	return s.queryResult, s.queryErr
 }
-func (s *spyStore) QueryTelemetryFromCursor(context.Context, store.TelemetryCursorQuery) (store.QueryResult[store.TelemetryRecord], error) {
-	return store.QueryResult[store.TelemetryRecord]{}, nil
+func (s *spyStore) QueryTelemetryFromCursor(_ context.Context, q store.TelemetryCursorQuery) (store.QueryResult[store.TelemetryRecord], error) {
+	s.gotCursorQuery = q
+	return s.queryResult, s.queryErr
 }
 func (s *spyStore) Close() {}
 
@@ -628,4 +643,135 @@ func TestRun_RecordedAction_LogsAtInfo(t *testing.T) {
 			t.Errorf("log output missing %s\ngot: %s", want, out)
 		}
 	}
+}
+
+func TestRun_ReadyClosedAfterSubscribe(t *testing.T) {
+	runner := operatorrunner.New(newSpyStore(), newSpyOp("op", store.InsightFilter{}))
+	cancel, _ := startRunner(t, runner.Run)
+	defer cancel()
+
+	select {
+	case <-runner.Ready():
+	case <-time.After(2 * time.Second):
+		t.Fatal("Ready channel not closed after subscribe")
+	}
+}
+
+func TestRun_StartedRecordedActionWriteError_LogsAndContinues(t *testing.T) {
+	var sb safeBuf
+	orig := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&sb, nil)))
+	t.Cleanup(func() { slog.SetDefault(orig) })
+
+	st := newSpyStore()
+	st.addRecordedActionErr = []error{store.ErrStoreClosed} // fail the first (started) write only
+	op := newSpyOp("op", store.InsightFilter{})
+	cancel, done := startRunner(t, operatorrunner.New(st, op).Run)
+
+	st.insightCh <- store.Insight{ID: "i1", Pattern: "p", Severity: store.SeverityInfo}
+	awaitExecute(t, op.called)
+	cancel()
+	if err := awaitDone(t, done); err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("runner exited with error: %v", err)
+	}
+
+	if !strings.Contains(sb.String(), `"msg":"failed to write started RecordedAction"`) {
+		t.Errorf("expected started-write failure log, got: %s", sb.String())
+	}
+	if len(st.recordedActions) != 2 {
+		t.Fatalf("want 2 recorded actions despite started-write error, got %d", len(st.recordedActions))
+	}
+	if st.recordedActions[1].State != store.StateSuccess {
+		t.Errorf("final State: got %s, want success", st.recordedActions[1].State)
+	}
+}
+
+func TestRun_FinalRecordedActionWriteError_Logs(t *testing.T) {
+	var sb safeBuf
+	orig := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&sb, nil)))
+	t.Cleanup(func() { slog.SetDefault(orig) })
+
+	st := newSpyStore()
+	st.addRecordedActionErr = []error{nil, store.ErrStoreClosed} // fail the final write only
+	op := newSpyOp("op", store.InsightFilter{})
+	cancel, done := startRunner(t, operatorrunner.New(st, op).Run)
+
+	st.insightCh <- store.Insight{ID: "i1", Pattern: "p", Severity: store.SeverityInfo}
+	awaitExecute(t, op.called)
+	cancel()
+	if err := awaitDone(t, done); err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("runner exited with error: %v", err)
+	}
+
+	if !strings.Contains(sb.String(), `"msg":"failed to write final RecordedAction"`) {
+		t.Errorf("expected final-write failure log, got: %s", sb.String())
+	}
+	if len(st.recordedActions) != 2 {
+		t.Fatalf("want 2 recorded actions, got %d", len(st.recordedActions))
+	}
+}
+
+func TestStoreWrapper_QueryTelemetryByTime_ForwardsToInner(t *testing.T) {
+	want := store.QueryResult[store.TelemetryRecord]{Records: []store.TelemetryRecord{{ID: "r1"}}}
+	q := store.TelemetryTimeRangeQuery{Start: time.UnixMilli(1), End: time.UnixMilli(2)}
+
+	t.Run("success", func(t *testing.T) {
+		spy := newSpyStore()
+		spy.queryResult = want
+		w := operatorrunner.NewStoreWrapper(spy)
+
+		got, err := w.QueryTelemetryByTime(context.Background(), q)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !spy.gotTimeQuery.Start.Equal(q.Start) || !spy.gotTimeQuery.End.Equal(q.End) {
+			t.Errorf("inner got query %+v, want %+v", spy.gotTimeQuery, q)
+		}
+		if len(got.Records) != 1 || got.Records[0].ID != "r1" {
+			t.Errorf("result not forwarded unchanged: got %+v", got)
+		}
+	})
+
+	t.Run("error", func(t *testing.T) {
+		spy := newSpyStore()
+		spy.queryErr = store.ErrStoreClosed
+		w := operatorrunner.NewStoreWrapper(spy)
+
+		if _, err := w.QueryTelemetryByTime(context.Background(), q); !errors.Is(err, store.ErrStoreClosed) {
+			t.Errorf("want ErrStoreClosed, got %v", err)
+		}
+	})
+}
+
+func TestStoreWrapper_QueryTelemetryFromCursor_ForwardsToInner(t *testing.T) {
+	want := store.QueryResult[store.TelemetryRecord]{Records: []store.TelemetryRecord{{ID: "r2"}}}
+	q := store.TelemetryCursorQuery{AfterID: "cursor-1", Count: 5}
+
+	t.Run("success", func(t *testing.T) {
+		spy := newSpyStore()
+		spy.queryResult = want
+		w := operatorrunner.NewStoreWrapper(spy)
+
+		got, err := w.QueryTelemetryFromCursor(context.Background(), q)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if spy.gotCursorQuery.AfterID != q.AfterID || spy.gotCursorQuery.Count != q.Count {
+			t.Errorf("inner got query %+v, want %+v", spy.gotCursorQuery, q)
+		}
+		if len(got.Records) != 1 || got.Records[0].ID != "r2" {
+			t.Errorf("result not forwarded unchanged: got %+v", got)
+		}
+	})
+
+	t.Run("error", func(t *testing.T) {
+		spy := newSpyStore()
+		spy.queryErr = store.ErrStoreClosed
+		w := operatorrunner.NewStoreWrapper(spy)
+
+		if _, err := w.QueryTelemetryFromCursor(context.Background(), q); !errors.Is(err, store.ErrStoreClosed) {
+			t.Errorf("want ErrStoreClosed, got %v", err)
+		}
+	})
 }
