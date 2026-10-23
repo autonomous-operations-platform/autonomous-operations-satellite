@@ -184,7 +184,7 @@ func TestSubscribeTelemetry_backpressureDrop(t *testing.T) {
 	for i := range envs {
 		envs[i] = makeEnv(nil)
 	}
-	s.AddTelemetry(context.Background(), envs)
+	_ = s.AddTelemetry(context.Background(), envs)
 
 	// drain what made it into the buffer
 	received := 0
@@ -422,11 +422,11 @@ func TestSubscribeInsights_filterBySeverity(t *testing.T) {
 		Severities: []store.Severity{store.SeverityCritical},
 	})
 
-	s.AddInsight(context.Background(), store.Insight{
+	_ = s.AddInsight(context.Background(), store.Insight{
 		ID: store.NewID(), ObserverName: "o", Pattern: "warn", Severity: store.SeverityWarning,
 		Summary: "warning", CreatedAt: time.Now(),
 	})
-	s.AddInsight(context.Background(), store.Insight{
+	_ = s.AddInsight(context.Background(), store.Insight{
 		ID: store.NewID(), ObserverName: "o", Pattern: "crit", Severity: store.SeverityCritical,
 		Summary: "critical!", CreatedAt: time.Now(),
 	})
@@ -534,7 +534,7 @@ func TestConcurrentAddAndSubscribe(t *testing.T) {
 			for i := range envs {
 				envs[i] = makeEnv(nil)
 			}
-			s.AddTelemetry(context.Background(), envs)
+			_ = s.AddTelemetry(context.Background(), envs)
 		}()
 	}
 	wg.Wait()

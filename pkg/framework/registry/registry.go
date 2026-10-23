@@ -9,10 +9,14 @@ import (
 )
 
 var (
-	mu         sync.RWMutex
+	//nolint:gochecknoglobals
+	mu sync.RWMutex
+	//nolint:gochecknoglobals
 	collectors []collector.Collector
-	observers  []observer.Observer
-	operators  []operator.Operator
+	//nolint:gochecknoglobals
+	observers []observer.Observer
+	//nolint:gochecknoglobals
+	operators []operator.Operator
 )
 
 func RegisterCollector(c collector.Collector) {

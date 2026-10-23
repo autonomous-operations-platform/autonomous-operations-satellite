@@ -16,8 +16,10 @@ import (
 	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/uuidv7"
 )
 
+//nolint:gochecknoglobals
 var fakeRowsRegistry sync.Map
 
+//nolint:gochecknoinits
 func init() {
 	sql.Register("fakerows", rowsDriver{})
 	sql.Register("failexec", failDriver{})
@@ -107,7 +109,7 @@ func newRowStore(t *testing.T, rows [][]driver.Value) *DorisStore {
 	if err != nil {
 		t.Fatalf("open fakerows db: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 
 	s, err := NewStore(db, Params{}, nil)
 	if err != nil {
@@ -121,7 +123,7 @@ func TestNewDorisStore_success(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 
 	s, err := NewStore(db, Params{}, nil)
 	if err != nil {
@@ -137,7 +139,7 @@ func TestNewDorisStore_schemaError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 
 	_, err = NewStore(db, Params{}, nil)
 	if err == nil {
@@ -216,7 +218,7 @@ func TestQueryByTime_endOnly(t *testing.T) {
 
 func TestQueryByTime_queryError(t *testing.T) {
 	db, _ := sql.Open("failexec", "")
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	s := &DorisStore{
 		subs:        make(map[*subscriber]struct{}),
 		insightSubs: make(map[*insightSubscriber]struct{}),
@@ -313,7 +315,7 @@ func TestQueryFromCursor_attributeFilter(t *testing.T) {
 
 func TestQueryFromCursor_queryError(t *testing.T) {
 	db, _ := sql.Open("failexec", "")
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	s := &DorisStore{
 		subs:        make(map[*subscriber]struct{}),
 		insightSubs: make(map[*insightSubscriber]struct{}),
@@ -348,7 +350,7 @@ func TestQueryByTime_malformedAttributes(t *testing.T) {
 
 func TestWriteToDoris_errorBranches(t *testing.T) {
 	db, _ := sql.Open("failexec", "")
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	s := &DorisStore{db: db, log: slog.Default()}
 
 	// These must not panic; they log the exec error and return it.
@@ -401,6 +403,7 @@ type (
 
 var errRowsIterator = errors.New("rows: iterator error")
 
+//nolint:gochecknoinits
 func init() {
 	sql.Register("rowsiterr", rowsIterErrDriver{})
 }
@@ -468,6 +471,7 @@ type (
 	scanErrRowsObj struct{ done bool }
 )
 
+//nolint:gochecknoinits
 func init() {
 	sql.Register("scanerr", scanErrDriver{})
 }

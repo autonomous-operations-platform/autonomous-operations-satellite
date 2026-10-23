@@ -62,13 +62,13 @@ func Connect(ctx context.Context, p Params, logger *slog.Logger) (*DorisStore, e
 		logger.Warn("waiting for Doris backend", "component", "store", "attempt", i+1, "max", 30, "err", err)
 		select {
 		case <-ctx.Done():
-			db.Close()
+			_ = db.Close()
 			return nil, ctx.Err()
 		case <-time.After(3 * time.Second):
 		}
 	}
 	if err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("init store: %w", err)
 	}
 
@@ -81,21 +81,21 @@ func openDB(p Params) (*sql.DB, error) {
 		return nil, err
 	}
 	if err := adminDB.Ping(); err != nil {
-		adminDB.Close()
+		_ = adminDB.Close()
 		return nil, err
 	}
 	if _, err := adminDB.Exec("CREATE DATABASE IF NOT EXISTS `" + p.DB + "`"); err != nil {
-		adminDB.Close()
+		_ = adminDB.Close()
 		return nil, fmt.Errorf("create database: %w", err)
 	}
-	adminDB.Close()
+	_ = adminDB.Close()
 
 	db, err := sql.Open("mysql", dsn(p, p.DB))
 	if err != nil {
 		return nil, err
 	}
 	if err := db.Ping(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 	maxConns := p.MaxOpenConns

@@ -16,6 +16,7 @@ type uuidGen struct {
 	seqLo  uint64
 }
 
+//nolint:gochecknoglobals
 var gen = &uuidGen{}
 
 func Generate() string {

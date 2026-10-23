@@ -262,7 +262,7 @@ func (s *DorisStore) SubscribeTelemetry(ctx context.Context, filter store.Teleme
 
 func (s *DorisStore) QueryTelemetryByTime(ctx context.Context, q store.TelemetryTimeRangeQuery) (store.QueryResult[store.TelemetryRecord], error) {
 	if err := q.Validate(); err != nil {
-		return store.QueryResult[store.TelemetryRecord]{}, fmt.Errorf("%w: %v", store.ErrInvalidQuery, err)
+		return store.QueryResult[store.TelemetryRecord]{}, fmt.Errorf("%w: %w", store.ErrInvalidQuery, err)
 	}
 
 	s.mu.RLock()
@@ -292,7 +292,7 @@ func (s *DorisStore) QueryTelemetryByTime(ctx context.Context, q store.Telemetry
 	if err != nil {
 		return store.QueryResult[store.TelemetryRecord]{}, fmt.Errorf("doris QueryTelemetryByTime: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var records []store.TelemetryRecord
 	for rows.Next() {
@@ -312,7 +312,7 @@ func (s *DorisStore) QueryTelemetryByTime(ctx context.Context, q store.Telemetry
 
 func (s *DorisStore) QueryTelemetryFromCursor(ctx context.Context, q store.TelemetryCursorQuery) (store.QueryResult[store.TelemetryRecord], error) {
 	if err := q.Validate(); err != nil {
-		return store.QueryResult[store.TelemetryRecord]{}, fmt.Errorf("%w: %v", store.ErrInvalidQuery, err)
+		return store.QueryResult[store.TelemetryRecord]{}, fmt.Errorf("%w: %w", store.ErrInvalidQuery, err)
 	}
 	if q.AfterID != "" && !uuidv7.IsValid(string(q.AfterID)) {
 		return store.QueryResult[store.TelemetryRecord]{}, store.ErrInvalidID
@@ -346,7 +346,7 @@ func (s *DorisStore) QueryTelemetryFromCursor(ctx context.Context, q store.Telem
 	if err != nil {
 		return store.QueryResult[store.TelemetryRecord]{}, fmt.Errorf("doris QueryTelemetryFromCursor: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var matched []store.TelemetryRecord
 	for rows.Next() {
@@ -547,7 +547,7 @@ func (s *DorisStore) Close() {
 	s.insBatcher.close()
 	s.raBatcher.close()
 	s.alBatcher.close()
-	s.db.Close()
+	_ = s.db.Close()
 }
 
 func scanTelemetry(rows *sql.Rows) (store.TelemetryRecord, error) {
