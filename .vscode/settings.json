@@ -1,5 +1,0 @@
-{
-  "gopls": {
-    "buildFlags": ["-tags=e2e"]
-  }
-}
