@@ -1,11 +1,3 @@
-<!--
-SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Autonomous Operations Platform contributors
-
-SPDX-License-Identifier: Apache-2.0
--->
-
----
-
 name: developer
 description: Use when implementing a code change, adding a feature, fixing a bug, or modifying configuration or automation scripts.
 
