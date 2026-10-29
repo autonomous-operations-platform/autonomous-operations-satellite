@@ -23,7 +23,10 @@ indent_size = 4
 
 # Markdown files
 [*.md]
-trim_trailing_whitespace = false
+trim_trailing_whitespace = true
+
+[{Makefile,*.mk}]
+indent_style = tab
 
 # YAML files
 [*.{yml,yaml}]
@@ -52,3 +55,7 @@ indent_size = 4
 # Dockerfile
 [Dockerfile*]
 indent_size = 4
+
+# Protocol Buffers
+[*.proto]
+indent_size = 2
