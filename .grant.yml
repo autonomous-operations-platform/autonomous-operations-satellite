@@ -11,7 +11,7 @@ quiet: false
 verbose: true
 
 require-license: true
-require-known-license: true
+require-known-license: false
 
 allow:
   - 0BSD
@@ -30,6 +30,7 @@ allow:
   - Unlicense
   - Zlib
   - CC0-*
+  - BSL-1.0
 
 ignore-packages:
   # actions/* is licensed under MIT
@@ -48,9 +49,6 @@ ignore-packages:
   - golangci/golangci-lint-action
   # licensed under BSD 3-Clause
   - golang/govulncheck-action
-  - golang.org/x/tools/cmd/cover
-  - golang.org/x/tools
-  - golang.org/x/sys
 
   # marocchino/sticky-pull-request-comment licensed under MIT
   - marocchino/sticky-pull-request-comment
