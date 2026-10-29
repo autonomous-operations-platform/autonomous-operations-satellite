@@ -34,20 +34,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # setup required tools
+
       - name: Setup Grant
         id: setup-grant
         run: |
           curl -sSfL https://get.anchore.io/grant | sudo sh -s -- -b /usr/local/bin
+
       - name: Verify Grant Installation
         run: grant --version
-      # run OSS compliance checks on syft SBOM
-      - name: Generate SBOM with Syft
-        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
-        with:
-          output-file: sbom.spdx.json
-          format: spdx-json
-          upload-artifact: false
-          config: .syft.yml
-      - name: Run OSS Grant Check on SBOM
-        run: grant check sbom.spdx.json -c ./.grant.yml
+
+      - name: Run OSS Grant Check
+        run: grant check . -c ./.grant.yml
