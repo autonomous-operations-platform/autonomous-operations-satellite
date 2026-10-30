@@ -3,6 +3,7 @@
 # Autonomous Operations Satellite Framework
 The Satellite is the per-node service in the Autonomous Operations stack. It gathers data from data center infrastructure (metrics, logs, traces) via **collectors**, persists it to [Apache Doris](https://doris.apache.org/), and drives a pipeline of **observers** (pattern detectors that emit insights) and **operators** (that react to insights with remediation actions).
 For more details, check out the [documentation on the Autonomous Operations Satellite](https://autonomous-operations.dev/docs/aos/).
+After that, you may want to check out the [`hello-world-satellite`](https://github.com/autonomous-operations-platform/hello-world-satellite) repo, where we built a demo satellite on top of this framework. 
 
 ## About this project
 
@@ -110,7 +111,3 @@ We as members, contributors, and leaders pledge to make participation in our com
 ## Licensing
 
 Copyright 2026 SAP SE or an SAP affiliate company and Autonomous Operations Platform contributors. Please see our [LICENSE](./LICENSE) for copyright and license information. Detailed information including third-party components and their licensing/copyright information is available [via the REUSE tool](https://api.reuse.software/info/github.com/autonomous-operations-platform/autonomous-operations-satellite).
-
-
-- **`aos-framework`** The Collector, Observer, and Operator interfaces, the store, and the `satellite.Run` orchestrator.
-- **[`hello-world-satellite`](https://github.com/autonomous-operations-platform/hello-world-satellite)** — a demo satellite built on this framework. Start with its [Getting Started guide](https://github.com/autonomous-operations-platform/hello-world-satellite/blob/main/GETTING-STARTED.md).
