@@ -2,7 +2,7 @@
 
 # Autonomous Operations Satellite Framework
 The Satellite is the per-node service in the Autonomous Operations stack. It gathers data from data center infrastructure (metrics, logs, traces) via **collectors**, persists it to [Apache Doris](https://doris.apache.org/), and drives a pipeline of **observers** (pattern detectors that emit insights) and **operators** (that react to insights with remediation actions).
-For more details, check out [software design documentation on the Autonomous Operations Satellite](https://pages.github.com/autonomous-operations-platform/autonomous-operations/#/architecture/software-design/autonomous-operations/autonomous-operations-satellite).
+For more details, check out the [documentation on the Autonomous Operations Satellite](https://autonomous-operations.dev/docs/aos/).
 
 ## About this project
 
