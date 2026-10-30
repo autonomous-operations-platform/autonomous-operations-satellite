@@ -129,3 +129,6 @@ docs/superpowers
 # misc
 *.code-workspace
 .tool-versions
+
+# syft generated
+sbom.spdx.json

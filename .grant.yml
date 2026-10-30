@@ -30,6 +30,7 @@ allow:
   - Unlicense
   - Zlib
   - CC0-*
+  - BSL-1.0
 
 ignore-packages:
   # actions/* is licensed under MIT
@@ -46,7 +47,7 @@ ignore-packages:
 
   # golangci/golangci-lint-action licensed under MIT
   - golangci/golangci-lint-action
-  # golang/govulncheck-action licensed under BSD 3-Clause
+  # licensed under BSD 3-Clause
   - golang/govulncheck-action
 
   # marocchino/sticky-pull-request-comment licensed under MIT
