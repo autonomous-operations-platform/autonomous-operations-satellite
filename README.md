@@ -32,10 +32,6 @@ go install golang.org/x/tools/cmd/goimports@latest
 
 # Linter
 curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.14.0
-
-# Pre-commit hooks (requires Python — https://pre-commit.com/#install)
-pipx install pre-commit  # or: pip install pre-commit --break-system-packages
-pre-commit install --hook-type pre-commit --hook-type commit-msg
 ```
 
 ## Formatting and linting
@@ -50,8 +46,6 @@ goimports -w .
 # Lint
 golangci-lint run ./...
 ```
-
-`golangci-lint` also runs automatically as a pre-commit hook once the hooks are installed.
 
 ## Running tests
 
