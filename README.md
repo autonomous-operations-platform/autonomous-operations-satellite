@@ -10,8 +10,7 @@ Executes deterministic, rule-based data center automation on bare metal. Operate
 
 ## Building a Satellite
 
-New to the framework? The [Getting Started guide](https://github.com/autonomous-operations-platform/hello-world-satellite/blob/main/GETTING-STARTED.md)
-in `hello-world-satellite` walks you through building a working Satellite by hand.
+New to the framework? The [Adoption Guide](https://autonomous-operations.dev/docs/adoption/build-your-own-satellite.html) walks you through building a working Satellite by hand.
 
 A Satellite orchestrates three kinds of components:
 
