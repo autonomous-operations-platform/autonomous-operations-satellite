@@ -11,7 +11,7 @@ quiet: false
 verbose: true
 
 require-license: true
-require-known-license: false
+require-known-license: true
 
 allow:
   - 0BSD
