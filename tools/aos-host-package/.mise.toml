@@ -93,27 +93,30 @@ docker run --rm -v "$NIX_STORE_VOLUME":/nix "$NIX_IMAGE" \
 
 # nix-collect-garbage -d deletes the generation link that the nixos/nix IMAGE's own
 # default profile points at (default-1-link), because nothing in the mounted volume
-# roots it. Once gone, every future container dies with `exec: "sh" not found`
-# (its PATH resolves through that profile). Repair it by re-pointing the link at the
-# profile-env baked into the pristine image.
+# roots it. Once gone, every future container that mounts the volume at /nix dies
+# with `exec: "sh" not found` (its PATH resolves through that profile). Repair it by
+# re-pointing the link at the profile-env baked into the pristine image.
 #
 # The target is read FROM THE IMAGE ITSELF (run without the volume mount, so the
 # image's own /nix shows through) — so this auto-adapts if NIX_IMAGE is bumped,
-# rather than hardcoding a digest-specific store hash. The relink is done on the
-# host via `colima ssh` because it must work even while the volume's profile is
-# broken (a mounted container's own PATH would already be dead).
+# rather than hardcoding a digest-specific store hash.
+#
+# The relink runs inside a container that mounts the volume at /vol (NOT /nix). That
+# container's own /nix comes from the image layer, so its `ln`/`sh` still work even
+# while the VOLUME's profile is broken — which is why this needs no `colima ssh` and
+# works on any Docker-compatible runtime (native Docker, Podman, Docker Desktop, …).
 echo ">>> repairing container profile link..."
 PROFILE_ENV=$(docker run --rm "$NIX_IMAGE" readlink -f /nix/var/nix/profiles/default)
 echo ">>> image profile-env: $PROFILE_ENV"
-colima ssh -- sudo ln -sfn "$PROFILE_ENV" \
-  "/var/lib/docker/volumes/$NIX_STORE_VOLUME/_data/var/nix/profiles/default-1-link"
+docker run --rm -v "$NIX_STORE_VOLUME":/vol "$NIX_IMAGE" \
+  sh -c "mkdir -p /vol/var/nix/profiles && ln -sfn '$PROFILE_ENV' /vol/var/nix/profiles/default-1-link"
 
 echo ">>> store usage after:"
 docker run --rm -v "$NIX_STORE_VOLUME":/nix "$NIX_IMAGE" df -h /nix | tail -1
 echo ">>> done."
 """
-# Why this task exists: the store volume ($NIX_STORE_VOLUME, a fixed ~100 GiB disk in
-# the Colima VM) fills after a few image builds — each pushes a fresh ~8 GiB closure.
+# Why this task exists: the store volume ($NIX_STORE_VOLUME, a named Docker volume)
+# fills after a few image builds — each pushes a fresh ~8 GiB closure.
 # `nix-collect-garbage -d` reclaims it, but it also deletes the nixos/nix image's own
 # profile generation link, so the repair step above is mandatory, not optional.
 
