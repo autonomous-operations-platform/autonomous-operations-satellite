@@ -1,0 +1,10 @@
+# Local scratch for `mise run run`: the qcow copied out of the Nix store volume and
+# any serial/boot logs. Rebuilt on demand — never commit (multi-GB).
+.run/
+
+# Build logs
+*.log
+
+# Nix build symlinks
+/result
+/result-*
