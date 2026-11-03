@@ -128,6 +128,75 @@ mysql -h127.0.0.1 -P9030 -uroot -e "SHOW BACKENDS\G"
 
 A healthy backend shows `Alive: true` and a non-zero `TotalCapacity`.
 
+### Running on Windows
+
+The `mise run run` task is written for an Apple Silicon Mac: it boots an **aarch64** image
+with `qemu-system-aarch64 -accel hvf` (a macOS hypervisor) and a Homebrew firmware path. A
+Windows machine is almost always **x86_64** and has neither, so the task does not work
+unmodified. Split the problem into *build* and *boot*, because they have different answers.
+
+> [!IMPORTANT]
+> As shipped, the flake builds an **aarch64** image only (see
+> [Limitations](#limitations-and-other-formats)). An x86_64 host cannot boot that image
+> natively — it would fall back to slow full-CPU emulation. Booting at native speed on
+> Windows first needs the x86_64 image work described in that section. The steps below
+> therefore describe the *mechanics*; they run at native speed only once an x86_64 image
+> exists.
+
+#### Recommended: WSL2 (Windows Subsystem for Linux)
+
+[WSL2](https://learn.microsoft.com/windows/wsl/) gives you a real Linux kernel on Windows.
+Inside a WSL2 distribution (e.g. Ubuntu), the **build** side works exactly as on Linux,
+because it only needs Docker driving the Nix builder container:
+
+1. Install WSL2 and a distro: `wsl --install` in an elevated PowerShell, then reboot.
+2. Inside the distro, install Docker (native, in WSL2) or enable Docker Desktop's WSL2
+   integration, plus `mise` and `qemu-system-x86`.
+3. Build the debug image the same way as everywhere else:
+
+   ```sh
+   mise run image packages.x86_64-linux.image-debug
+   ```
+
+   This needs the x86_64 image support noted above. Until then, build the aarch64 image and
+   expect emulated-speed boot.
+
+4. **Boot it yourself** — do not use `mise run run` (it is macOS/aarch64-specific). Extract
+   the qcow2 from the store (see [Get the image out of the Nix store](#get-the-image-out-of-the-nix-store)),
+   then run QEMU with KVM, which WSL2 exposes:
+
+   ```sh
+   qemu-system-x86_64 \
+     -machine q35 -cpu host -accel kvm -m 8192 -smp 2 \
+     -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE.fd \
+     -drive if=virtio,format=qcow2,file=satellite-host-debug.qcow2 \
+     -nographic \
+     -netdev user,id=net0,hostfwd=tcp::2222-:22 \
+     -device virtio-net-pci,netdev=net0
+   ```
+
+   `OVMF` is the x86_64 UEFI firmware (`ovmf` package). Login and quit are the same as the
+   Mac path: `root` / `nixos`, quit with `Ctrl-a` then `x`.
+
+#### Alternative: build in WSL2, boot in Hyper-V
+
+If you prefer a Windows-native hypervisor, build the image in WSL2 as above, convert it to
+VHD, and import it into Hyper-V as a **Generation 2** (UEFI) VM:
+
+```sh
+qemu-img convert -f qcow2 -O vpc satellite-host-debug.qcow2 satellite-host-debug.vhd
+```
+
+In Hyper-V Manager, create a Generation 2 VM, attach the VHD as its disk, and **disable
+Secure Boot** (the image's bootloader is not signed for Microsoft's UEFI keys). Hyper-V has
+no serial console in the terminal, so use the VM's console window, or enable SSH in the
+image and connect over the VM's network.
+
+> [!NOTE]
+> Native Windows (no WSL2) is not a supported build path. The build toolchain assumes a
+> Linux Docker host; Docker Desktop on Windows uses a WSL2 backend anyway, so WSL2 is the
+> common denominator either way.
+
 ---
 
 ## File structure
