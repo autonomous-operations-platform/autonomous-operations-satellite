@@ -75,6 +75,18 @@ Homebrew `qemu` formula provides.
    This starts the pinned `nixos/nix` container over your runtime and prints the Nix
    version. The first run downloads the container image and can take a few minutes.
 
+4. Place the signed satellite artifact in `vendor/`. The build reads a signed OCM
+   Common Transport Format (CTF) tarball and its checksum from `vendor/` (see
+   [Artifact source](#artifact-source-vendor-today-github-later)). 
+   Currently, the filename `f5-vlan-demo-satellite-0.0.3.*` is hard-coded.
+   Build or obtain both files and copy them in:
+
+   ```
+   vendor/<satellite>-<version>.ctf.tgz           # the signed CTF archive
+   vendor/<satellite>-<version>.ctf.tgz.sha256sum # its sha256 (e.g. `sha256sum <tgz> > <tgz>.sha256sum`)
+   ```
+
+
 ### Boot the VM
 
 Run:
