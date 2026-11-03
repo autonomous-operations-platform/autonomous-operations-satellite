@@ -152,8 +152,54 @@ tools/nixos/               # This flake, inside the autonomous-operations-satell
 └── .run/                  # Scratch output of `mise run run` (git-ignored, multi-GB).
 ```
 
-OCM stands for the [Open Component Model](https://ocm.software), the standard this project
-uses to package and sign the satellite.
+## Architecture and boot sequence
+
+Four systemd units bring the appliance up: the Doris Frontend (FE) and Backend (BE), a
+one-shot that registers the BE with the FE, and the satellite itself. Their start order
+matters, and two different kinds of dependency are at play:
+
+- **Ordering (systemd `after`/`wants`)** — a hard edge the init system enforces.
+- **Runtime dependency** — a soft edge the application enforces by retrying. The satellite
+  has **no** systemd dependency on Doris; it simply retries its database connection until
+  Doris is ready.
+
+```mermaid
+graph TD
+    net["network-online.target"]
+
+    net --> fe["doris-fe.service<br/>(Type=forking)"]
+    net --> be["doris-be.service<br/>(Type=simple)"]
+
+    fe --> reg["doris-register-be.service<br/>(Type=oneshot)<br/>ALTER SYSTEM ADD BACKEND"]
+    be --> reg
+
+    sat["aos-satellite.service<br/>(hardened, retries DB)"]
+
+    reg -. "runtime: BE must be<br/>registered & reporting" .-> sat
+    be  -. "runtime: satellite<br/>connects to Doris" .-> sat
+
+    classDef systemd fill:#e8f0fe,stroke:#4169e1,color:#1a1a1a;
+    classDef oneshot fill:#fef3e8,stroke:#e1811a,color:#1a1a1a;
+    classDef app fill:#e8fbe8,stroke:#2e8b2e,color:#1a1a1a;
+    class fe,be systemd;
+    class reg oneshot;
+    class sat app;
+
+    linkStyle 0,1,2,3 stroke:#4169e1,stroke-width:2px;
+    linkStyle 4,5 stroke:#2e8b2e,stroke-width:1.5px,stroke-dasharray:5 5;
+```
+
+Solid arrows are systemd ordering edges; dashed arrows are runtime dependencies that the
+application resolves by retrying.
+
+Two consequences worth internalizing:
+
+1. **FE and BE start in parallel.** Neither orders after the other. The FE learns about the
+   BE only through the `doris-register-be` one-shot, not through startup order.
+2. **The satellite does not wait on Doris via systemd.** It is only ordered after
+   `network.target`, so it may start before Doris is ready and log "waiting for Doris
+   backend" until the cluster forms. This is intentional — it decouples the satellite's unit
+   from Doris's readiness and survives Doris restarts.
 
 ---
 
@@ -227,7 +273,10 @@ There are two ways to consume it, and both work from the same flake.
 
 #### A. Use the package on an existing NixOS / Nix distribution
 
-The verified satellite is `packages.<system>.default`, so:
+This path has three levels, from "just the binary" to "the satellite service plus Doris".
+Pick the one that matches what you need. Each level builds on the one before it.
+
+##### A1. Install only the satellite binary (`nix profile install`)
 
 ```sh
 # Install the verified satellite binary into your Nix profile:
@@ -237,16 +286,30 @@ nix profile install "github:autonomous-operations-platform/autonomous-operations
 nix run "github:autonomous-operations-platform/autonomous-operations-satellite?dir=tools/nixos"
 ```
 
-Quote the ref on the command line so the shell does not treat `?` as a glob. Both resolve
-to the signature-verified build for *your* machine's system. Building it runs the same two
-gates (sha256 byte-integrity + `ocm verify` RSASSA-PSS) on your box — provenance is
-enforced at install time, not just in CI. This needs network (GitHub +
-`cache.nixos.org`) or a configured substituter; on an air-gapped host, populate the
-local substituter first (that is the ADR-024 path).
+Quote the ref on the command line so the shell does not treat `?` as a glob.
 
-To run it as the **hardened systemd service** (dedicated user, seccomp, dropped caps)
-rather than an ad-hoc binary, add the module to your `configuration.nix` — it is
-self-sufficient, so `enable = true` is all it needs:
+**What this installs:** only the satellite executable, placed in your Nix profile
+(`~/.nix-profile/bin/<satellite>`). That is all.
+
+**What this does NOT do:** it does **not** install Doris, and it does **not** create any
+systemd unit, service user, or hardening. `nix profile install` installs a *package*; it
+never touches system configuration. Doris is a separate package (`packages.<system>.doris`)
+that the satellite binary does not depend on, so it is never fetched here.
+
+**About the OCM artifact:** building the binary still runs the full supply-chain chain on
+your machine, so the OCM artifact **is** fetched and verified as a *build input* — today
+from the flake's `vendor/` directory (Nix fetches the repo tree to get it), or from a
+GitHub release once the source toggle is flipped to `fetchurl`. Both run the same two gates
+(sha256 byte-integrity + `ocm verify` RSASSA-PSS) on your box, so provenance is enforced at
+install time, not just in CI. The artifact ends up as an intermediate store path, not
+something in your profile. This needs network (GitHub + `cache.nixos.org`) or a configured
+substituter; on an air-gapped host, populate the local substituter first (the ADR-024 path).
+
+##### A2. Run the satellite as a hardened systemd service
+
+To get the **systemd unit** (dedicated user, seccomp, dropped capabilities) instead of an
+ad-hoc binary, add the satellite module to a NixOS host config and `nixos-rebuild switch`.
+The module is self-sufficient, so `enable = true` is all it needs:
 
 ```nix
 {
@@ -269,11 +332,55 @@ self-sufficient, so `enable = true` is all it needs:
 }
 ```
 
-`services.aosSatellite.package` defaults to the verified satellite built for the host's
-own `pkgs.system`, so you don't have to replicate the pinned-OCM overlay wiring. FIPS
-(`boot.kernelParams = [ "fips=1" ]`) is **not** forced by the module — it is a
-whole-host decision; set it in your own config if you want it (as
-`nixosConfigurations.satellite-host` does).
+Then `sudo nixos-rebuild switch --flake .#my-host`.
+
+**What this installs:** the `aos-satellite.service` systemd unit and its service user, with
+the verified satellite as the executable. The OCM artifact is fetched and verified exactly
+as in A1 (it is a build input of the package the service runs).
+
+**What this does NOT do:** it still does **not** bring Doris. `nixosModules.default` wires
+*only* the satellite service — Doris lives in a separate module (see A3).
+`services.aosSatellite.package` defaults to the verified satellite built for the host's own
+`pkgs.system`, so you do not replicate the pinned-OCM overlay wiring. FIPS
+(`boot.kernelParams = [ "fips=1" ]`) is **not** forced by the module — it is a whole-host
+decision; set it yourself if you want it (as `nixosConfigurations.satellite-host` does).
+
+##### A3. Add Doris (the full service stack)
+
+The appliance also runs Apache Doris. To reproduce that on your own host, add the **second**
+module, `nixosModules.doris`, and enable it alongside the satellite:
+
+```nix
+modules = [
+  aos.nixosModules.default      # satellite service
+  aos.nixosModules.doris        # Doris Frontend + Backend services
+  ({ pkgs, ... }: {
+    services.aosSatellite.enable = true;
+    services.doris.enable = true;             # brings the doris-fe, doris-be,
+                                              # and doris-register-be units
+    # Doris pulls its JDK and prebuilt binaries as package dependencies; size the
+    # FE heap / BE memory for the host if the ~8 GiB defaults do not fit:
+    # services.doris.feHeap = "2048m";
+    # services.doris.beMemLimit = "4G";
+  })
+  ./hardware-configuration.nix
+];
+```
+
+**What this installs:** the `doris-fe`, `doris-be`, and `doris-register-be` systemd units in
+addition to the satellite service. Enabling `services.doris` builds `packages.doris` (the
+patched upstream Apache Doris, see [Doris services](#doris-services)) and its JDK as normal
+package dependencies — so `nixos-rebuild switch` fetches and builds them during activation.
+The `doris-register-be` one-shot forms the single-node cluster on first boot.
+
+> **Doris reuses the satellite's service user.** `services.doris.user` defaults to
+> `aos-satellite` and must already exist — the satellite module (`nixosModules.default`,
+> enabled above) creates it. If you enable Doris without the satellite module, either keep
+> that module or set `services.doris.user`/`.group` to an existing user you provide.
+
+> **Simpler alternative.** If you want the *whole* tested appliance (satellite + Doris +
+> FIPS wiring) rather than assembling modules yourself, consume the complete system from
+> path B instead — `nixosConfigurations.satellite-host` already composes all of it.
 
 #### B. Build the combined image / A/B-switch closure (ADR-024 delivery)
 
@@ -359,17 +466,103 @@ both set by the `image` and `run` tasks:
 The result is a UEFI + Unified Kernel Image (UKI) layout that boots directly under
 `qemu-system-aarch64 -machine virt`.
 
-### The signed artifact
+#### What the artifact is
 
-The vendored `.tgz` is the signed OCM component for the demo satellite (signature
-`satellite-sig`, RSASSA-PSS, Plain encoding — mirrors `.ocm/config`). It carries the
-satellite payload resource with `linux/{amd64,arm64}` blobs; the build extracts the blob
-matching the target system.
+`mise run image` (or `nix build .#image`) produces a Nix store directory containing a
+single file: **`satellite-host.qcow2`**. Its shape:
 
-> A separate satellite *runtime* component may live in its own, currently-unsigned CTF
-> that is not part of the signed tarball. When that component is signed and published it
-> can be added here as a second verified source + extraction, identically. For now the
-> package ships the signed payload the supply-chain gate actually covers.
+- **Format:** `qcow2`. **Architecture:** `aarch64` (see [Limitations](#limitations-and-other-formats)).
+- **Firmware:** **UEFI only.** The image has no legacy/BIOS boot path. It needs an aarch64
+  UEFI firmware (EDK2 / AAVMF) at boot.
+- **Boot path:** a GPT disk with two partitions — an ESP (FAT) holding
+  `/EFI/BOOT/BOOTAA64.EFI` (systemd-boot) and a UKI under `/EFI/Linux/`, plus an `ext4`
+  root labelled `nixos`. Because the bootloader sits at the UEFI *removable-media* path
+  (`BOOTAA64.EFI`), the firmware finds it with no NVRAM boot entry — so the image boots on a
+  fresh VM without any host-side `efibootmgr` setup.
+- **Login:** none. This is the hardened image. Use `image-debug` (what `mise run run` boots)
+  if you need a console.
+
+#### Get the image out of the Nix store
+
+The store lives inside the builder container's volume, so copy the file to a path your
+hypervisor can open:
+
+```sh
+# Build and print the store path:
+OUT=$(mise run image | tail -1)
+
+# Stream the qcow2 out of the store volume to the current directory:
+docker run --rm -v aos-nix-store:/nix "$NIX_IMAGE" \
+  cat "$OUT/satellite-host.qcow2" > satellite-host.qcow2
+```
+
+(`mise run run` already does this for the debug image; the above is the manual equivalent
+for the hardened image.)
+
+#### Boot it on a real VM
+
+You need an **aarch64** host or emulator and an **aarch64 UEFI firmware image**. On most
+Linux distros the firmware ships as `AAVMF` (`/usr/share/AAVMF/AAVMF_CODE.fd`) or via the
+`edk2-aarch64` package; on macOS/Homebrew it is
+`/opt/homebrew/share/qemu/edk2-aarch64-code.fd`.
+
+**QEMU directly** (adjust the firmware path):
+
+```sh
+qemu-system-aarch64 \
+  -machine virt -cpu max -m 8192 -smp 2 \
+  -drive if=pflash,format=raw,readonly=on,file=/path/to/edk2-aarch64-code.fd \
+  -drive if=virtio,format=qcow2,file=satellite-host.qcow2 \
+  -nographic \
+  -netdev user,id=net0 -device virtio-net-pci,netdev=net0
+```
+
+Use `-cpu max` (software emulation) on a non-aarch64 host, or `-cpu host -accel kvm`
+(Linux/aarch64) / `-accel hvf` (macOS/aarch64) for native speed.
+
+**libvirt / `virt-install`** (aarch64 KVM host):
+
+```sh
+virt-install \
+  --name satellite-host --memory 8192 --vcpus 2 \
+  --os-variant nixos-unknown --arch aarch64 --machine virt \
+  --boot uefi \
+  --disk path=/var/lib/libvirt/images/satellite-host.qcow2,format=qcow2,bus=virtio \
+  --network default --graphics none --import
+```
+
+`--boot uefi` is mandatory — libvirt then selects the matching AAVMF firmware. `--import`
+boots the existing disk rather than running an installer.
+
+#### Convert to another disk format
+
+`qcow2` imports directly into QEMU, libvirt, and most clouds. For hypervisors that want a
+different container, convert host-side with `qemu-img` (the data and partition layout are
+unchanged):
+
+```sh
+qemu-img convert -f qcow2 -O raw   satellite-host.qcow2 satellite-host.raw    # raw / dd-able
+qemu-img convert -f qcow2 -O vmdk  satellite-host.qcow2 satellite-host.vmdk   # VMware / OVA
+qemu-img convert -f qcow2 -O vpc   satellite-host.qcow2 satellite-host.vhd    # Hyper-V / Azure
+qemu-img convert -f qcow2 -O vdi   satellite-host.qcow2 satellite-host.vdi    # VirtualBox
+```
+
+A raw image can be written straight to a disk or passthrough device
+(`dd if=satellite-host.raw of=/dev/<disk> bs=4M`), as long as the target boots via UEFI.
+
+#### Limitations and other formats
+
+The current `nix/image.nix` is **aarch64-only and emits qcow2**. There is no build flag to
+switch architecture or output format — both are properties of that file:
+
+- **Architecture.** The ESP hardcodes the aarch64 bootloader binaries
+  (`BOOTAA64.EFI`, `systemd-bootaa64.efi`). An `x86_64` image needs the `BOOTX64.EFI` /
+  `systemd-bootx64.efi` equivalents and `system = "x86_64-linux"`. Generalizing this (select
+  the bootloader file by `pkgs.stdenv.hostPlatform`) is a small change but not done yet.
+- **Output format.** The derivation converts the raw image to qcow2 unconditionally. The
+  raw image is available internally as `config.system.build.image`; to expose raw (or skip
+  the conversion), adjust the `runCommand` at the bottom of `nix/image.nix` — or just
+  convert the qcow2 with `qemu-img` as above, which needs no rebuild.
 
 ### Doris services
 
