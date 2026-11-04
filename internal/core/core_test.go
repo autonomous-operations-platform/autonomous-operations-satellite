@@ -1,7 +1,0 @@
-package core_test
-
-import "testing"
-
-func TestPlaceholder(t *testing.T) {
-	t.Skip("placeholder: replace with real tests as core logic is implemented")
-}

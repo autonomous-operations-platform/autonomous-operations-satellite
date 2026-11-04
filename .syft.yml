@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Autonomous Operations Platform contributors
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# Syft SBOM Generation Configuration
+# Complete configuration file with all available options
+# See: https://github.com/anchore/syft
+
+golang:
+  search-local-vendor-licenses: true
+  search-remote-licenses: true
+  # if unset this defaults to $GOPROXY followed by https://proxy.golang.org (env: SYFT_GOLANG_PROXY)
+  proxy: "https://proxy.golang.org,direct"
+
+javascript:
+  search-remote-licenses: true
+  npm-base-url: "https://registry.npmjs.org"
