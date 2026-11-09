@@ -85,6 +85,36 @@ func TestDecodeLogs_ResourceAttrsNotShared(t *testing.T) {
 	}
 }
 
+// A batched push can carry several resources, each with several scopes.
+// Every record keeps the attributes of its own resource.
+func TestDecodeLogs_MultipleResourcesAndScopes(t *testing.T) {
+	body := []byte(`{"resourceLogs":[
+ {"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"a"}},{"key":"only.a","value":{"stringValue":"x"}}]},
+  "scopeLogs":[{"logRecords":[{"body":{"stringValue":"a1"}}]},{"logRecords":[{"body":{"stringValue":"a2"}}]}]},
+ {"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"b"}}]},
+  "scopeLogs":[{"logRecords":[{"body":{"stringValue":"b1"}}]}]}
+]}`)
+	records, err := decode(store.SignalLogs, body)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	want := []struct{ payload, service string }{{"a1", "a"}, {"a2", "a"}, {"b1", "b"}}
+	if len(records) != len(want) {
+		t.Fatalf("want %d records, got %d", len(want), len(records))
+	}
+	for i, w := range want {
+		if got := string(records[i].Payload); got != w.payload {
+			t.Errorf("records[%d].Payload = %q, want %q", i, got, w.payload)
+		}
+		if got := records[i].Attributes["service.name"]; got != w.service {
+			t.Errorf("records[%d] service.name = %q, want %q", i, got, w.service)
+		}
+	}
+	if _, ok := records[2].Attributes["only.a"]; ok {
+		t.Error("resource attribute leaked into a record of another resource")
+	}
+}
+
 func TestDecode_EmptyLogsRequest(t *testing.T) {
 	for _, body := range []string{`{}`, `{"resourceLogs":[]}`, `{"resourceLogs":[{"scopeLogs":[{"logRecords":[]}]}]}`} {
 		records, err := decode(store.SignalLogs, []byte(body))

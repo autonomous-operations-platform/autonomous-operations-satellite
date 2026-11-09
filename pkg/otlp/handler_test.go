@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"runtime"
 	"strings"
 	"testing"
@@ -79,6 +80,23 @@ func TestHandler_Success(t *testing.T) {
 				t.Errorf("store calls=%d records=%v", calls, records)
 			}
 		})
+	}
+}
+
+// A batched logs push is stored with one AddTelemetry call holding every record.
+func TestHandler_BatchedLogsSingleStoreCall(t *testing.T) {
+	body, err := os.ReadFile("testdata/logs.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := &fakeStore{}
+	rec := post(newHandler(t, otlp.Endpoint{}, st), "/v1/logs", bytes.NewReader(body),
+		map[string]string{"Content-Type": "application/json"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("got %d %q, want 200", rec.Code, rec.Body)
+	}
+	if calls, records := st.snapshot(); calls != 1 || len(records) != 3 {
+		t.Errorf("store calls=%d records=%d, want 1 call with 3 records", calls, len(records))
 	}
 }
 
