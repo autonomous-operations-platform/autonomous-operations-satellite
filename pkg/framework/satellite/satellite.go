@@ -26,6 +26,11 @@ type Config struct {
 }
 
 func Run(ctx context.Context, cfg Config) error {
+	// Cancel the context given to components whenever Run returns, so a setup
+	// failure also stops observers, operators, and earlier collectors.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	collectors := registry.Collectors()
 	observers := registry.Observers()
 	operators := registry.Operators()
@@ -102,7 +107,9 @@ func Run(ctx context.Context, cfg Config) error {
 		clog := slog.Default().With("component", "collector", "name", c.Name())
 		cst := collectorstorewrapper.New(st, clog)
 		clog.InfoContext(ctx, "setting up collector")
-		c.Setup(ctx, clog, cst)
+		if err := c.Setup(ctx, clog, cst); err != nil {
+			return fmt.Errorf("satellite: setup collector %q: %w", c.Name(), err)
+		}
 	}
 
 	satLog.InfoContext(ctx, "running",
