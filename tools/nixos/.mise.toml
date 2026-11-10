@@ -20,14 +20,17 @@
 NIX_IMAGE = "nixos/nix:2.31.2@sha256:29fc5fe207f159ceb0143c25c19c774062fee02ce5eda118f3067547b3054894"
 # Persistent Nix store cache (named Docker volume) → fast incremental rebuilds.
 NIX_STORE_VOLUME = "aos-nix-store"
-# Native arch of the Colima VM. Override to x86_64-linux for amd64 (binfmt/QEMU).
+# Native arch of the builder. Uncomment one pair below — x86_64 for WSL2 / native Linux x86_64, aarch64 for Apple Silicon / Colima.
+# NIX_SYSTEM = "x86_64-linux"
+# NIX_PLATFORM = "linux/amd64"
 NIX_SYSTEM = "aarch64-linux"
+NIX_PLATFORM = "linux/arm64"
 
 [tasks.nix-shell-up]
 description = "Start the pinned Nix container over Colima; confirm flakes are enabled."
 run = """
 docker run --rm -it \
-  --platform linux/arm64 \
+  --platform "$NIX_PLATFORM" \
   -v "$PWD":/work -w /work \
   -v "$NIX_STORE_VOLUME":/nix \
   "$NIX_IMAGE" \
@@ -39,7 +42,7 @@ description = "Build a flake attr inside the pinned Nix container (default: the 
 run = """
 ATTR="${1:-packages.$NIX_SYSTEM.satellite}"
 docker run --rm \
-  --platform linux/arm64 \
+  --platform "$NIX_PLATFORM" \
   -v "$PWD":/work -w /work \
   -v "$NIX_STORE_VOLUME":/nix \
   "$NIX_IMAGE" \
@@ -50,7 +53,7 @@ docker run --rm \
 description = "Build the standalone OCM signature-verification gate (fails on bad/absent signature)."
 run = """
 docker run --rm \
-  --platform linux/arm64 \
+  --platform "$NIX_PLATFORM" \
   -v "$PWD":/work -w /work \
   -v "$NIX_STORE_VOLUME":/nix \
   "$NIX_IMAGE" \
@@ -62,7 +65,7 @@ description = "Build the NixOS qcow2 image (systemd-repart, host-side, no VM)."
 run = """
 ATTR="${1:-packages.$NIX_SYSTEM.image}"
 docker run --rm \
-  --platform linux/arm64 \
+  --platform "$NIX_PLATFORM" \
   --security-opt seccomp=unconfined \
   -v "$PWD":/work -w /work \
   -v "$NIX_STORE_VOLUME":/nix \
@@ -125,7 +128,7 @@ echo ">>> done."
 description = "Build the air-gapped nixos-rebuild switch closure (ADR-024 generation-based A/B switch)."
 run = """
 docker run --rm \
-  --platform linux/arm64 \
+  --platform "$NIX_PLATFORM" \
   -v "$PWD":/work -w /work \
   -v "$NIX_STORE_VOLUME":/nix \
   "$NIX_IMAGE" \
@@ -137,7 +140,7 @@ docker run --rm \
 description = "NixOS VM test: boot the satellite host under QEMU; assert FIPS active + service running (ADR-024)."
 run = """
 docker run --rm \
-  --platform linux/arm64 \
+  --platform "$NIX_PLATFORM" \
   -v "$PWD":/work -w /work \
   -v "$NIX_STORE_VOLUME":/nix \
   "$NIX_IMAGE" \
@@ -158,7 +161,7 @@ set -euo pipefail
 # 1. Build the debug image inside the pinned Nix container, capturing its store path.
 echo ">>> building image-debug (this is the variant with console login)..."
 OUT=$(docker run --rm \
-  --platform linux/arm64 \
+  --platform "$NIX_PLATFORM" \
   --security-opt seccomp=unconfined \
   -v "$PWD":/work -w /work \
   -v "$NIX_STORE_VOLUME":/nix \
