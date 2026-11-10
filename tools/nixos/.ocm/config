@@ -1,0 +1,23 @@
+type: generic.config.ocm.software/v1
+configurations:
+  - type: signing.config.ocm.software/v1alpha1
+    signature: satellite-sig
+    signer:
+      type: RSASigningConfiguration/v1alpha1
+      signatureAlgorithm: RSASSA-PSS
+      signatureEncodingPolicy: Plain
+  - type: credentials.config.ocm.software
+    consumers:
+      - identity:
+          type: RSA/v1alpha1
+          algorithm: RSASSA-PSS
+          signature: satellite-sig
+        credentials:
+          - type: Credentials/v1
+            properties:
+              private_key_pem_file: /tmp/satellite-sign.key
+              public_key_pem_file: .ocm/satellite.pub.pem
+  - type: transfer.config.ocm.software/v1alpha1
+    recursive: -1
+    copyMode: allResources
+    uploadType: localBlob
