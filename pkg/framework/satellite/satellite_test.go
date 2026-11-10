@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -26,6 +27,7 @@ type setupCall struct {
 type spyCollector struct {
 	name  string
 	setup chan setupCall
+	err   error // returned from Setup
 }
 
 func newSpyCollector(name string) *spyCollector {
@@ -33,8 +35,9 @@ func newSpyCollector(name string) *spyCollector {
 }
 
 func (c *spyCollector) Name() string { return c.name }
-func (c *spyCollector) Setup(ctx context.Context, _ *slog.Logger, st store.CollectorStore) {
+func (c *spyCollector) Setup(ctx context.Context, _ *slog.Logger, st store.CollectorStore) error {
 	c.setup <- setupCall{ctx, st}
+	return c.err
 }
 
 // ---------------------------------------------------------------------------
@@ -720,5 +723,44 @@ func TestRun_ContextCanceled_NotLogged(t *testing.T) {
 
 	if n := handler.errorCount(); n != 0 {
 		t.Errorf("expected no Error-level logs on clean shutdown, got %d", n)
+	}
+}
+
+func TestRun_Collector_SetupErrorStopsSatellite(t *testing.T) {
+	t.Cleanup(func() { registry.Reset(t) })
+
+	errBind := errors.New("listen :8080: address already in use")
+	a := newSpyCollector("a")
+	b := newSpyCollector("b")
+	b.err = errBind
+	c := newSpyCollector("c")
+	for _, col := range []*spyCollector{a, b, c} {
+		registry.RegisterCollector(col)
+	}
+	ns := newNotifyStore()
+	registry.RegisterObserver(&spyObserver{"obs"})
+
+	cancel, done := startSatellite(t, satellite.Config{Store: ns})
+	t.Cleanup(cancel)
+
+	callA := awaitSetup(t, a.setup)
+	awaitSetup(t, b.setup)
+	err := awaitReturn(t, done)
+
+	if !errors.Is(err, errBind) {
+		t.Fatalf("want error wrapping %v, got %v", errBind, err)
+	}
+	if !strings.Contains(err.Error(), `"b"`) {
+		t.Errorf("error %q does not name collector b", err)
+	}
+	select {
+	case <-c.setup:
+		t.Error("collector c was set up after b failed")
+	default:
+	}
+	select {
+	case <-callA.ctx.Done():
+	default:
+		t.Error("component context is not cancelled after Run returned an error")
 	}
 }
