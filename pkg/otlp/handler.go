@@ -53,19 +53,20 @@ func (h *ingestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	received := time.Now()
 	ctx := r.Context()
 	log := h.logger.With("endpoint", h.ep.Name, "signal", h.signal)
+	reject := func(e *httpError) {
+		// Client errors log the fixed reason only: decoder errors can quote payload bytes.
+		log.WarnContext(ctx, "otlp: request rejected", "status", e.status, "reason", e.msg)
+		http.Error(w, e.msg, e.status)
+	}
 
 	body, herr := readBody(w, r, h.ep.MaxBodyBytes)
-	var records []store.NewTelemetryRecord
-	if herr == nil {
-		var err error
-		if records, err = decode(h.signal, body); err != nil {
-			herr = &httpError{http.StatusBadRequest, "invalid OTLP JSON body"}
-		}
-	}
 	if herr != nil {
-		// Client errors log the fixed reason only: decoder errors can quote payload bytes.
-		log.WarnContext(ctx, "otlp: request rejected", "status", herr.status, "reason", herr.msg)
-		http.Error(w, herr.msg, herr.status)
+		reject(herr)
+		return
+	}
+	records, err := decode(h.signal, body)
+	if err != nil {
+		reject(&httpError{http.StatusBadRequest, "invalid OTLP JSON body"})
 		return
 	}
 
@@ -80,7 +81,6 @@ func (h *ingestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Host:       r.Host,
 			ReceivedAt: received,
 		}
-		var err error
 		if records, err = h.ep.Processor(ctx, req, records); err != nil {
 			log.ErrorContext(ctx, "otlp: processor failed", "err", err)
 			http.Error(w, "processing failed", http.StatusInternalServerError)

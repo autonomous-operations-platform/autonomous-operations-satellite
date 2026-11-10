@@ -2,6 +2,7 @@ package otlp
 
 import (
 	"encoding/json"
+	"maps"
 	"strconv"
 
 	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/framework/store"
@@ -13,22 +14,20 @@ import (
 // record per request with the raw body as payload. Every record has a non-nil
 // attribute map. Any JSON error is returned unchanged.
 func decode(signal store.Signal, body []byte) ([]store.NewTelemetryRecord, error) {
+	var attrs map[string]string
+	var err error
 	switch signal {
 	case store.SignalLogs:
 		return decodeLogs(body)
 	case store.SignalMetrics:
-		attrs, err := metricAttrs(body)
-		if err != nil {
-			return nil, err
-		}
-		return []store.NewTelemetryRecord{{Signal: signal, Payload: body, Attributes: attrs}}, nil
+		attrs, err = metricAttrs(body)
 	default: // store.SignalTraces; config validation rejects other signals.
-		attrs, err := traceAttrs(body)
-		if err != nil {
-			return nil, err
-		}
-		return []store.NewTelemetryRecord{{Signal: signal, Payload: body, Attributes: attrs}}, nil
+		attrs, err = traceAttrs(body)
 	}
+	if err != nil {
+		return nil, err
+	}
+	return []store.NewTelemetryRecord{{Signal: signal, Payload: body, Attributes: attrs}}, nil
 }
 
 // anyValue is the scalar part of an OTLP AnyValue. Arrays and key-value lists
@@ -173,9 +172,7 @@ func decodeLogs(body []byte) ([]store.NewTelemetryRecord, error) {
 		for _, sl := range rl.ScopeLogs {
 			for _, lr := range sl.LogRecords {
 				attrs := make(map[string]string, len(resAttrs)+len(lr.Attributes))
-				for k, v := range resAttrs {
-					attrs[k] = v
-				}
+				maps.Copy(attrs, resAttrs)
 				mergeAttrs(attrs, lr.Attributes)
 				if lr.TimeUnixNano != "" {
 					attrs["time_unix_nano"] = lr.TimeUnixNano.String()

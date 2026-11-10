@@ -33,23 +33,19 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 
 	// Group endpoints by address, keeping first-seen order.
 	var addrs []string
-	muxes := make(map[string]*http.ServeMux)
+	var muxes []*http.ServeMux
+	addrIndex := make(map[string]int)
 	s := &Server{byName: make(map[string]int), done: make(chan struct{})}
 	for _, ep := range cfg.Endpoints {
-		mux, ok := muxes[ep.Addr]
+		i, ok := addrIndex[ep.Addr]
 		if !ok {
-			mux = http.NewServeMux()
-			muxes[ep.Addr] = mux
+			i = len(addrs)
+			addrIndex[ep.Addr] = i
 			addrs = append(addrs, ep.Addr)
+			muxes = append(muxes, http.NewServeMux())
 		}
-		register(mux, ep, cfg.Store, cfg.Logger)
-	}
-	addrIndex := make(map[string]int, len(addrs))
-	for i, a := range addrs {
-		addrIndex[a] = i
-	}
-	for _, ep := range cfg.Endpoints {
-		s.byName[ep.Name] = addrIndex[ep.Addr]
+		register(muxes[i], ep, cfg.Store, cfg.Logger)
+		s.byName[ep.Name] = i
 	}
 
 	var lc net.ListenConfig
@@ -64,22 +60,19 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 		s.listeners = append(s.listeners, ln)
 	}
 
-	servers := make([]*http.Server, len(addrs))
-	for i, addr := range addrs {
-		servers[i] = &http.Server{
-			Handler:           muxes[addr],
+	servers := make([]*http.Server, len(muxes))
+	serveErrs := make(chan error, len(servers))
+	var wg sync.WaitGroup
+	for i, ln := range s.listeners {
+		srv := &http.Server{
+			Handler:           muxes[i],
 			ReadHeaderTimeout: cfg.ReadHeaderTimeout,
 			ReadTimeout:       cfg.ReadTimeout,
 			WriteTimeout:      cfg.WriteTimeout,
 			IdleTimeout:       cfg.IdleTimeout,
 			ErrorLog:          slog.NewLogLogger(cfg.Logger.Handler(), slog.LevelWarn),
 		}
-	}
-
-	serveErrs := make(chan error, len(servers))
-	var wg sync.WaitGroup
-	for i, srv := range servers {
-		ln := s.listeners[i]
+		servers[i] = srv
 		cfg.Logger.InfoContext(ctx, "otlp: listening", "addr", ln.Addr().String())
 		wg.Go(func() {
 			if err := srv.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
