@@ -53,19 +53,20 @@ func (h *ingestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	received := time.Now()
 	ctx := r.Context()
 	log := h.logger.With("endpoint", h.ep.Name, "signal", h.signal)
+	// Client errors log the fixed reason only: decoder errors can quote payload bytes.
+	reject := func(e httpError) {
+		log.WarnContext(ctx, "otlp: request rejected", "status", e.status, "reason", e.msg)
+		http.Error(w, e.msg, e.status)
+	}
 
 	body, herr := readBody(w, r, h.ep.MaxBodyBytes)
-	var records []store.NewTelemetryRecord
-	if herr == nil {
-		var err error
-		if records, err = decode(h.signal, body); err != nil {
-			herr = &httpError{http.StatusBadRequest, "invalid OTLP JSON body"}
-		}
-	}
 	if herr != nil {
-		// Client errors log the fixed reason only: decoder errors can quote payload bytes.
-		log.WarnContext(ctx, "otlp: request rejected", "status", herr.status, "reason", herr.msg)
-		http.Error(w, herr.msg, herr.status)
+		reject(*herr)
+		return
+	}
+	records, err := decode(h.signal, body)
+	if err != nil {
+		reject(httpError{http.StatusBadRequest, "invalid OTLP JSON body"})
 		return
 	}
 
@@ -80,20 +81,20 @@ func (h *ingestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Host:       r.Host,
 			ReceivedAt: received,
 		}
-		var err error
 		if records, err = h.ep.Processor(ctx, req, records); err != nil {
 			log.ErrorContext(ctx, "otlp: processor failed", "err", err)
 			http.Error(w, "processing failed", http.StatusInternalServerError)
 			return
 		}
-	}
-
-	if len(records) > 0 {
+		// decode never returns nil attributes; a processor may.
 		for i := range records {
 			if records[i].Attributes == nil {
 				records[i].Attributes = map[string]string{}
 			}
 		}
+	}
+
+	if len(records) > 0 {
 		if _, err := h.store.AddTelemetry(ctx, records); err != nil {
 			log.ErrorContext(ctx, "otlp: store write failed", "err", err)
 			http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
@@ -116,7 +117,7 @@ func readBody(w http.ResponseWriter, r *http.Request, limit int64) ([]byte, *htt
 		}
 	}
 
-	var src io.Reader = http.MaxBytesReader(w, r.Body, limit)
+	src := http.MaxBytesReader(w, r.Body, limit)
 	switch strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Encoding"))) {
 	case "", "identity":
 	case "gzip":
@@ -124,18 +125,14 @@ func readBody(w http.ResponseWriter, r *http.Request, limit int64) ([]byte, *htt
 		if err != nil {
 			return nil, readError(err)
 		}
-		defer func() { _ = zr.Close() }()
-		src = zr
+		src = http.MaxBytesReader(w, zr, limit)
 	default:
 		return nil, &httpError{http.StatusUnsupportedMediaType, "unsupported content encoding"}
 	}
 
-	body, err := io.ReadAll(io.LimitReader(src, limit+1))
+	body, err := io.ReadAll(src)
 	if err != nil {
 		return nil, readError(err)
-	}
-	if int64(len(body)) > limit {
-		return nil, &httpError{http.StatusRequestEntityTooLarge, "request body too large"}
 	}
 	if len(body) == 0 {
 		return nil, &httpError{http.StatusBadRequest, "empty request body"}
@@ -146,9 +143,6 @@ func readBody(w http.ResponseWriter, r *http.Request, limit int64) ([]byte, *htt
 func readError(err error) *httpError {
 	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 		return &httpError{http.StatusRequestEntityTooLarge, "request body too large"}
-	}
-	if errors.Is(err, io.EOF) {
-		return &httpError{http.StatusBadRequest, "empty request body"}
 	}
 	return &httpError{http.StatusBadRequest, "unreadable request body"}
 }

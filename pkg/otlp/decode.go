@@ -2,7 +2,14 @@ package otlp
 
 import (
 	"encoding/json"
+	"iter"
+	"maps"
 	"strconv"
+
+	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/collector/pdata/pmetric"
+	"go.opentelemetry.io/collector/pdata/ptrace"
 
 	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/framework/store"
 )
@@ -15,179 +22,106 @@ import (
 func decode(signal store.Signal, body []byte) ([]store.NewTelemetryRecord, error) {
 	switch signal {
 	case store.SignalLogs:
-		return decodeLogs(body)
-	case store.SignalMetrics:
-		attrs, err := metricAttrs(body)
+		ld, err := (&plog.JSONUnmarshaler{}).UnmarshalLogs(body)
 		if err != nil {
 			return nil, err
 		}
-		return []store.NewTelemetryRecord{{Signal: signal, Payload: body, Attributes: attrs}}, nil
-	default: // store.SignalTraces; config validation rejects other signals.
-		attrs, err := traceAttrs(body)
+		return logRecords(ld), nil
+	case store.SignalMetrics:
+		md, err := (&pmetric.JSONUnmarshaler{}).UnmarshalMetrics(body)
 		if err != nil {
 			return nil, err
+		}
+		return []store.NewTelemetryRecord{{Signal: signal, Payload: body, Attributes: metricAttrs(md)}}, nil
+	default: // store.SignalTraces; config validation rejects other signals.
+		td, err := (&ptrace.JSONUnmarshaler{}).UnmarshalTraces(body)
+		if err != nil {
+			return nil, err
+		}
+		attrs := make(map[string]string)
+		for _, rs := range td.ResourceSpans().All() {
+			mergeAttrs(attrs, rs.Resource().Attributes())
+			for _, ss := range rs.ScopeSpans().All() {
+				for _, span := range ss.Spans().All() {
+					mergeAttrs(attrs, span.Attributes())
+				}
+			}
 		}
 		return []store.NewTelemetryRecord{{Signal: signal, Payload: body, Attributes: attrs}}, nil
 	}
 }
 
-// anyValue is the scalar part of an OTLP AnyValue. Arrays and key-value lists
-// are skipped. protojson encodes int64 as a quoted string, but other encoders
-// send a number; json.Number accepts both.
-type anyValue struct {
-	StringValue *string      `json:"stringValue"`
-	IntValue    *json.Number `json:"intValue"`
-	DoubleValue *float64     `json:"doubleValue"`
-	BoolValue   *bool        `json:"boolValue"`
+// mergeAttrs copies the scalar attributes into dst, later keys winning.
+// Maps, slices, bytes, and empty values are skipped.
+func mergeAttrs(dst map[string]string, attrs pcommon.Map) {
+	for k, v := range attrs.All() {
+		if s, ok := scalar(v); ok {
+			dst[k] = s
+		}
+	}
 }
 
-func (v anyValue) scalar() (string, bool) {
-	switch {
-	case v.StringValue != nil:
-		return *v.StringValue, true
-	case v.IntValue != nil:
-		return v.IntValue.String(), true
-	case v.DoubleValue != nil:
-		return strconv.FormatFloat(*v.DoubleValue, 'g', -1, 64), true
-	case v.BoolValue != nil:
-		return strconv.FormatBool(*v.BoolValue), true
+func scalar(v pcommon.Value) (string, bool) {
+	switch v.Type() {
+	case pcommon.ValueTypeStr, pcommon.ValueTypeInt, pcommon.ValueTypeDouble, pcommon.ValueTypeBool:
+		return v.AsString(), true
 	}
 	return "", false
 }
 
-type keyValue struct {
-	Key   string   `json:"key"`
-	Value anyValue `json:"value"`
-}
-
-type resource struct {
-	Attributes []keyValue `json:"attributes"`
-}
-
-type dataPoints struct {
-	DataPoints []struct {
-		Attributes []keyValue `json:"attributes"`
-	} `json:"dataPoints"`
-}
-
-type metric struct {
-	Gauge                *dataPoints `json:"gauge"`
-	Sum                  *dataPoints `json:"sum"`
-	Histogram            *dataPoints `json:"histogram"`
-	ExponentialHistogram *dataPoints `json:"exponentialHistogram"`
-	Summary              *dataPoints `json:"summary"`
-}
-
-type logRecord struct {
-	TimeUnixNano         json.Number `json:"timeUnixNano"`
-	ObservedTimeUnixNano json.Number `json:"observedTimeUnixNano"`
-	Body                 anyValue    `json:"body"`
-	Attributes           []keyValue  `json:"attributes"`
-}
-
-func mergeAttrs(dst map[string]string, kvs []keyValue) {
-	for _, kv := range kvs {
-		if s, ok := kv.Value.scalar(); ok {
-			dst[kv.Key] = s
-		}
-	}
-}
-
-func metricAttrs(body []byte) (map[string]string, error) {
-	var data struct {
-		ResourceMetrics []struct {
-			Resource     resource `json:"resource"`
-			ScopeMetrics []struct {
-				Metrics []metric `json:"metrics"`
-			} `json:"scopeMetrics"`
-		} `json:"resourceMetrics"`
-	}
-	if err := json.Unmarshal(body, &data); err != nil {
-		return nil, err
-	}
+func metricAttrs(md pmetric.Metrics) map[string]string {
 	attrs := make(map[string]string)
-	for _, rm := range data.ResourceMetrics {
-		mergeAttrs(attrs, rm.Resource.Attributes)
-		for _, sm := range rm.ScopeMetrics {
-			for _, m := range sm.Metrics {
-				for _, dps := range []*dataPoints{m.Gauge, m.Sum, m.Histogram, m.ExponentialHistogram, m.Summary} {
-					if dps == nil {
-						continue
-					}
-					for _, dp := range dps.DataPoints {
-						mergeAttrs(attrs, dp.Attributes)
-					}
+	for _, rm := range md.ResourceMetrics().All() {
+		mergeAttrs(attrs, rm.Resource().Attributes())
+		for _, sm := range rm.ScopeMetrics().All() {
+			for _, m := range sm.Metrics().All() {
+				switch m.Type() {
+				case pmetric.MetricTypeGauge:
+					mergeDataPoints(attrs, m.Gauge().DataPoints().All())
+				case pmetric.MetricTypeSum:
+					mergeDataPoints(attrs, m.Sum().DataPoints().All())
+				case pmetric.MetricTypeHistogram:
+					mergeDataPoints(attrs, m.Histogram().DataPoints().All())
+				case pmetric.MetricTypeExponentialHistogram:
+					mergeDataPoints(attrs, m.ExponentialHistogram().DataPoints().All())
+				case pmetric.MetricTypeSummary:
+					mergeDataPoints(attrs, m.Summary().DataPoints().All())
 				}
 			}
 		}
 	}
-	return attrs, nil
+	return attrs
 }
 
-func traceAttrs(body []byte) (map[string]string, error) {
-	var data struct {
-		ResourceSpans []struct {
-			Resource   resource `json:"resource"`
-			ScopeSpans []struct {
-				Spans []struct {
-					Attributes []keyValue `json:"attributes"`
-				} `json:"spans"`
-			} `json:"scopeSpans"`
-		} `json:"resourceSpans"`
+func mergeDataPoints[P interface{ Attributes() pcommon.Map }](dst map[string]string, points iter.Seq2[int, P]) {
+	for _, dp := range points {
+		mergeAttrs(dst, dp.Attributes())
 	}
-	if err := json.Unmarshal(body, &data); err != nil {
-		return nil, err
-	}
-	attrs := make(map[string]string)
-	for _, rs := range data.ResourceSpans {
-		mergeAttrs(attrs, rs.Resource.Attributes)
-		for _, ss := range rs.ScopeSpans {
-			for _, span := range ss.Spans {
-				mergeAttrs(attrs, span.Attributes)
-			}
-		}
-	}
-	return attrs, nil
 }
 
-// decodeLogs returns one record per log record. Attributes merge in this
+// logRecords returns one record per log record. Attributes merge in this
 // order, later keys winning: resource attributes, log record attributes,
 // timestamps, then top-level scalar fields of a JSON object body.
-func decodeLogs(body []byte) ([]store.NewTelemetryRecord, error) {
-	var data struct {
-		ResourceLogs []struct {
-			Resource  resource `json:"resource"`
-			ScopeLogs []struct {
-				LogRecords []logRecord `json:"logRecords"`
-			} `json:"scopeLogs"`
-		} `json:"resourceLogs"`
-	}
-	if err := json.Unmarshal(body, &data); err != nil {
-		return nil, err
-	}
-
+func logRecords(ld plog.Logs) []store.NewTelemetryRecord {
 	var records []store.NewTelemetryRecord
-	for _, rl := range data.ResourceLogs {
+	for _, rl := range ld.ResourceLogs().All() {
 		resAttrs := make(map[string]string)
-		mergeAttrs(resAttrs, rl.Resource.Attributes)
-		for _, sl := range rl.ScopeLogs {
-			for _, lr := range sl.LogRecords {
-				attrs := make(map[string]string, len(resAttrs)+len(lr.Attributes))
-				for k, v := range resAttrs {
-					attrs[k] = v
+		mergeAttrs(resAttrs, rl.Resource().Attributes())
+		for _, sl := range rl.ScopeLogs().All() {
+			for _, lr := range sl.LogRecords().All() {
+				attrs := maps.Clone(resAttrs)
+				mergeAttrs(attrs, lr.Attributes())
+				if ts := lr.Timestamp(); ts != 0 {
+					attrs["time_unix_nano"] = strconv.FormatUint(uint64(ts), 10)
 				}
-				mergeAttrs(attrs, lr.Attributes)
-				if lr.TimeUnixNano != "" {
-					attrs["time_unix_nano"] = lr.TimeUnixNano.String()
-				}
-				if lr.ObservedTimeUnixNano != "" {
-					attrs["observed_time_unix_nano"] = lr.ObservedTimeUnixNano.String()
+				if ts := lr.ObservedTimestamp(); ts != 0 {
+					attrs["observed_time_unix_nano"] = strconv.FormatUint(uint64(ts), 10)
 				}
 				var payload []byte
-				if s, ok := lr.Body.scalar(); ok {
+				if s, ok := scalar(lr.Body()); ok {
 					payload = []byte(s)
 				}
-				if lr.Body.StringValue != nil {
+				if lr.Body().Type() == pcommon.ValueTypeStr {
 					mergeJSONBody(attrs, payload)
 				}
 				records = append(records, store.NewTelemetryRecord{
@@ -198,7 +132,7 @@ func decodeLogs(body []byte) ([]store.NewTelemetryRecord, error) {
 			}
 		}
 	}
-	return records, nil
+	return records
 }
 
 // mergeJSONBody merges the top-level scalar fields of a JSON object body into
