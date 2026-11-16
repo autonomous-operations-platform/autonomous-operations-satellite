@@ -23,17 +23,25 @@ let
 
   dorisDefault = import ./doris.nix { inherit pkgs; };
 
-  # Runtime PATH for the upstream start_*/stop_* shell scripts. These scripts are
-  # written for a conventional Linux distro and shell out to tools NixOS does not
-  # put on PATH by default. Determined from the upstream scripts, not guessed:
-  #   util-linux → getopt, swapon        (the `getopt: command not found` failure)
-  #   gnused     → sed
-  #   gnugrep    → grep
-  #   gawk       → awk
-  #   procps     → kill, free, sysctl    (memory/limit checks on startup)
+  # The Doris runtime logic (seed / derive-netaddr / set-priority-networks / register)
+  # lives in ../scripts/*.sh, wrapped by writeShellApplication in doris-scripts.nix.
+  # SINGLE SOURCE OF TRUTH: this NixOS module and the portable systemd installer
+  # (doris-systemd.nix) both consume these same wrapped scripts. The wrappers bake the
+  # right tools onto each script's PATH (util-linux/getopt, gnused, gnugrep, gawk,
+  # procps, iproute2, coreutils; mariadb.client's `mysql` for the register script), so
+  # the module no longer needs its own `dorisScriptPath`/`mysqlClient`.
+  scripts = import ./doris-scripts.nix { inherit pkgs; };
+
+  # Runtime PATH for the UPSTREAM start_*/stop_* shell scripts (start_fe.sh/start_be.sh).
+  # These are written for a conventional Linux distro and shell out to tools NixOS does
+  # not put on PATH by default:
+  #   util-linux → getopt, swapon        gnused → sed       gnugrep → grep
+  #   gawk       → awk                   procps → kill, free, sysctl
   #   coreutils  → uname, date, tr, nohup, cat, wc, chmod, mkdir, env, pwd, echo
-  # FE's `java` is invoked via $JAVA_HOME/bin/java (absolute), so the JDK does not
-  # need to be on PATH. The macOS-only `brew` branch is never taken on Linux.
+  #   iproute2   → ip
+  # FE's `java` is invoked via $JAVA_HOME/bin/java (absolute), so the JDK does not need
+  # to be on PATH. The macOS-only `brew` branch is never taken on Linux. (The extracted
+  # scripts carry their own baked PATH; this list is for the upstream ExecStart scripts.)
   dorisScriptPath = [
     pkgs.bash
     pkgs.coreutils
@@ -42,128 +50,35 @@ let
     pkgs.gnugrep
     pkgs.gawk
     pkgs.procps
-    pkgs.iproute2   # `ip` — used to derive priority_networks at boot (setPriorityNetworks)
+    pkgs.iproute2
   ];
 
-  # MySQL-protocol client (client only, no server) used by the BE-registration
-  # unit to talk to the FE's query port. mariadb.client ships a `mysql` binary.
-  mysqlClient = pkgs.mariadb.client;
+  # ── Shell snippet emitters: call the shared wrapped scripts ──────────────────
+  # These keep the preStart call-sites identical (`${seedDorisHome "fe" "doris-meta"}`,
+  # `${deriveNetAddr}`, `${setPriorityNetworks}`) while the actual logic lives in the
+  # single-source-of-truth scripts (../scripts/*.sh via doris-scripts.nix). The full
+  # rationale for each — writable DORIS_HOME seeding (the Read-only-FS / EROFS trap),
+  # routable-IP derivation (loopback → BE DNSCache failure), and in-place
+  # priority_networks rewrite — now lives in those scripts' headers.
 
-  # The upstream start_fe.sh / start_be.sh resolve DORIS_HOME to the parent of
-  # their own bin/ directory (`curdir="$(cd "$(dirname "$0")" && pwd)"; DORIS_HOME
-  # ="$(cd "${curdir}/.." && pwd)"`) and then write the daemon redirect to
-  # ${DORIS_HOME}/log/{fe,be}.out — UNCONDITIONALLY, ignoring the LOG_DIR env var.
-  # If DORIS_HOME is the Nix store package (immutable, read-only), that write fails
-  # with "Read-only file system". So we cannot run the scripts in-place from the
-  # store.
-  #
-  # Fix: build a WRITABLE per-service tree at /var/lib/doris/{fe,be} and run the
-  # scripts from there, so DORIS_HOME resolves to the writable copy and log/, conf/,
-  # data and the *.out redirect all land on the writable ext4 root.
-  #
-  # To keep the tree cheap (FE's lib/ is hundreds of MB of jars) we do NOT copy the
-  # package. Instead:
-  #   bin/   — a REAL directory of symlinks to the store's scripts. It must be a
-  #            real dir, not a symlink: the script does `cd "$(dirname "$0")" &&
-  #            pwd`, which resolves symlinks, so a symlinked bin/ would make
-  #            DORIS_HOME resolve back into the store. Real dir → pwd stays under
-  #            /var/lib/doris and DORIS_HOME is the writable tree.
-  #   lib/   — a symlink to the store (referenced only as the path ${DORIS_HOME}/lib,
-  #            never `cd`-ed into, so a symlink is fine and costs nothing).
-  #   conf/  — a REAL dir seeded with a WRITABLE copy of the ENTIRE store conf/
-  #            (fe.conf/be.conf plus ldap.conf, ssl/, sanitizer suppressions,
-  #            odbcinst.ini, …). Doris writes nothing here at runtime, but the main
-  #            .conf is edited in preStart below, so the dir must be writable and
-  #            complete — a symlink or a partial copy would lose the sidecar files.
-  #   log/, data — real writable directories, preserved across restarts.
-  #
-  # `${component}` is "fe" or "be". `dataDirs` is a shell `case` pattern (names
-  # joined with "|") of the component's MUTABLE data directories — these are
-  # shipped in the package (e.g. fe/doris-meta, be/storage) but MUST NOT be
-  # symlinked to the read-only store: Doris writes into them at runtime (FE's
-  # doris-meta/process.lock, BE's storage). The symlink loop skips them so the
-  # real writable dirs created in preStart survive.
+  # Build the writable DORIS_HOME tree. `component` is "fe"/"be"; `dataDirs` is the
+  # case pattern of the component's MUTABLE dirs to leave as real writable dirs
+  # (fe/doris-meta, be/storage). Reads $STATE from the caller's scope.
   seedDorisHome = component: dataDirs: ''
-    mkdir -p "$STATE"/log "$STATE"/conf
-
-    # bin/: real dir of symlinks to the store's scripts (refreshed each start).
-    rm -rf "$STATE"/bin
-    mkdir -p "$STATE"/bin
-    for f in ${cfg.package}/${component}/bin/*; do
-      ln -sfn "$f" "$STATE"/bin/"$(basename "$f")"
-    done
-
-    # conf/: writable copy of every file EXCEPT the main .conf (owned by preStart).
-    # Refresh sidecar config (ldap.conf, ssl/, suppressions, …) from the store.
-    for p in ${cfg.package}/${component}/conf/*; do
-      name="$(basename "$p")"
-      case "$name" in
-        fe.conf|be.conf) ;;  # preStart seeds + edits these, then preserves them
-        *)
-          rm -rf "$STATE"/conf/"$name"
-          cp -aL --no-preserve=mode "$p" "$STATE"/conf/"$name"
-          ;;
-      esac
-    done
-
-    # Everything else immutable (lib, plugins, …) is symlinked straight to the
-    # store — except bin/log/conf (handled above) and the mutable data dirs,
-    # which stay as the real writable dirs preStart creates.
-    for p in ${cfg.package}/${component}/*; do
-      name="$(basename "$p")"
-      case "$name" in
-        bin|log|conf|${dataDirs}) ;;
-        *) ln -sfn "$p" "$STATE"/"$name" ;;
-      esac
-    done
+    STATE="$STATE" DORIS_PKG=${cfg.package} \
+      ${scripts.seed-home}/bin/doris-seed-home.sh ${component} ${lib.escapeShellArg dataDirs}
   '';
 
-  # Derive the node's network address, with retry. Sets two shell vars:
-  #   IP  — the bare address (e.g. 10.0.2.15), used to register the BE
-  #   PN  — the value for `priority_networks`
-  # When cfg.priorityNetworks is "auto", both come from the default-route interface
-  # (`ip route get`) so the image is portable with no hardcoded IP; PN is that
-  # interface's CIDR. Otherwise cfg.priorityNetworks is used verbatim as PN and IP
-  # is the local address that falls inside it.
-  #
-  # RETRIES ~60s: at service start the DHCP lease/route may not be up yet. An empty
-  # result would otherwise silently leave the node on loopback (FE registers itself
-  # as 127.0.0.1, whose literal the BE's DNSCache can't resolve → report RPC fails →
-  # backend shows zero capacity). On total failure it exits non-zero rather than
-  # proceed with a bad address. Callers must have `ip`, `grep`, `awk` on PATH.
+  # Derive the node's routable address and set $IP/$PN in the CALLER's shell scope
+  # (preStart reads both afterwards). The script prints `IP=…`/`PN=…`; eval captures them.
   deriveNetAddr = ''
-    _PN_CFG='${cfg.priorityNetworks}'
-    IP=""
-    PN=""
-    for _i in $(seq 1 30); do
-      _ip=$(ip -4 -o route get 1.1.1.1 2>/dev/null | grep -oE 'src [0-9.]+' | awk '{print $2}')
-      if [ -n "$_ip" ]; then
-        _cidr=$(ip -4 -o addr show 2>/dev/null | awk -v ip="$_ip" '$4 ~ "^"ip"/" {print $4}' | head -n1)
-        if [ "$_PN_CFG" = auto ]; then
-          IP="$_ip"; PN="$_cidr"
-        else
-          IP="$_ip"; PN="$_PN_CFG"
-        fi
-      fi
-      [ -n "$IP" ] && [ -n "$PN" ] && break
-      sleep 2
-    done
-    if [ -z "$IP" ] || [ -z "$PN" ]; then
-      echo "ERROR: could not derive network address after retries (priorityNetworks=$_PN_CFG); node would fall back to loopback" >&2
-      exit 1
-    fi
+    eval "$(PRIORITY_NETWORKS=${lib.escapeShellArg cfg.priorityNetworks} \
+      ${scripts.derive-netaddr}/bin/doris-derive-netaddr.sh)"
   '';
 
-  # Set `priority_networks` in a Doris conf file ($CONF, set by the caller). fe.conf
-  # and be.conf SHIP a commented `# priority_networks = …` line, so rewrite it in
-  # place (uncommenting) rather than appending a duplicate. Expects `deriveNetAddr`
-  # to have run first (it reads $PN).
+  # Rewrite priority_networks in the conf at $CONF using the $PN set by deriveNetAddr.
   setPriorityNetworks = ''
-    if grep -qE '^[[:space:]]*#?[[:space:]]*priority_networks[[:space:]]*=' "$CONF"; then
-      sed -i "s|^[[:space:]]*#\\?[[:space:]]*priority_networks[[:space:]]*=.*|priority_networks = $PN|" "$CONF"
-    else
-      printf 'priority_networks = %s\n' "$PN" >> "$CONF"
-    fi
+    ${scripts.set-priority-networks}/bin/doris-set-priority-networks.sh "$CONF" "$PN"
   '';
 
   # Hardening shared by the FE and BE services. Both run the same lighter-than-
@@ -476,38 +391,14 @@ in
       };
 
       script = ''
-        MYSQL=${mysqlClient}/bin/mysql
-        FE_HOST=127.0.0.1     # mysql CLIENT connects here; the OS resolver handles
-        FE_PORT=9030          # 127.0.0.1 fine (this is NOT Doris's DNSCache path)
-
-        # The backend MUST be registered by the same routable IP the FE/BE advertise
-        # via priority_networks — never 127.0.0.1, which the BE's DNSCache can't
-        # resolve. deriveNetAddr sets $IP (with the same retry/logic the confs use).
-        ${deriveNetAddr}
-        BE_HB="$IP:9050"   # BE heartbeat_service_port
-
-        # Wait (up to ~5 min) for FE to be ready. The probe is `SHOW BACKENDS`, NOT
-        # `SELECT 1`: in this Doris version even SELECT 1 needs a scan node and fails
-        # with "No backend available" until a BE is registered — a chicken-and-egg
-        # that would make a SELECT-based probe never succeed. SHOW BACKENDS is an
-        # admin statement that returns (possibly empty) as soon as FE is up.
-        for i in $(seq 1 60); do
-          if "$MYSQL" -h"$FE_HOST" -P"$FE_PORT" -uroot -e 'SHOW BACKENDS' >/dev/null 2>&1; then
-            break
-          fi
-          sleep 5
-        done
-
-        # Idempotent: only ADD BACKEND if this exact IP isn't already registered.
-        if "$MYSQL" -h"$FE_HOST" -P"$FE_PORT" -uroot -N -e 'SHOW BACKENDS' 2>/dev/null \
-             | grep -qF "$IP"; then
-          echo "BE $IP already registered; nothing to do."
-          exit 0
-        fi
-
-        echo "Registering backend $BE_HB with FE ..."
-        "$MYSQL" -h"$FE_HOST" -P"$FE_PORT" -uroot \
-          -e "ALTER SYSTEM ADD BACKEND \"$BE_HB\""
+        # All the logic — derive routable IP (never loopback), wait for FE via
+        # `SHOW BACKENDS`, idempotent `ALTER SYSTEM ADD BACKEND <IP>:9050` — lives in the
+        # shared wrapped script. mariadb.client's `mysql` is baked onto its PATH.
+        PRIORITY_NETWORKS=${lib.escapeShellArg cfg.priorityNetworks} \
+        MYSQL_BIN=mysql \
+        FE_HOST=127.0.0.1 \
+        FE_PORT=9030 \
+          ${scripts.register-be}/bin/doris-register-be.sh
       '';
     };
   };

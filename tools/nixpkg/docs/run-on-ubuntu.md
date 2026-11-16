@@ -1,0 +1,274 @@
+<!--
+SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Autonomous Operations Platform contributors
+
+SPDX-License-Identifier: Apache-2.0
+-->
+
+# Run the satellite on Ubuntu with Nix
+
+This walkthrough brings up the signature-verified AOS satellite and its Apache Doris
+datastore **inside an Ubuntu container**, using **Nix** to fetch and build every
+component. It is meant for colleagues who want to review and run the stack without the
+full NixOS image — on Linux, macOS (Docker Desktop / Colima), or Windows (WSL2 / Docker
+Desktop).
+
+You only need **Docker**. Everything else (Nix, OCM, the satellite, Doris, the JDK) is
+installed step by step below.
+
+> Each command runs against a long-lived container named `aos-nix`. Open your own shell
+> into it anytime with `docker exec -it aos-nix bash`.
+
+## Why this base image
+
+We want Doris to run under **systemd**, exactly as it would on a real server
+(`systemctl start`, the generated units, the `make install` path). The official
+`ubuntu` / `debian` / `fedora` container images deliberately **strip systemd**, so they
+can't boot it as PID 1 without a custom Dockerfile. We therefore use a community image
+that packages a stock Ubuntu userland **with a working systemd**:
+`ghcr.io/fauust/docker-systemd:ubuntu-24.04`. It is for local testing only.
+
+## Choose an architecture
+
+Set these once; every later command reuses them. Pick the pair for your machine:
+
+```bash
+# Apple Silicon (native, fastest):
+export ARCH_PLATFORM=linux/arm64 ; export NIX_SYSTEM=aarch64-linux
+
+# x86_64 laptop/server, OR the "faithful" path on Apple Silicon (emulated, slower):
+export ARCH_PLATFORM=linux/amd64 ; export NIX_SYSTEM=x86_64-linux
+```
+
+- **amd64** matches the NixOS appliance image and the best-supported Apache Doris build.
+  On Apple Silicon it runs under emulation (slower, but fewer surprises at the Doris step).
+- **arm64** is native and fast on Apple Silicon; Doris ships an arm64 build too.
+
+## Step 1 — Start an Ubuntu + systemd container
+
+systemd must run as PID 1, which needs a few container flags (a writable cgroup mount,
+its own cgroup namespace, and tmpfs for `/run`):
+
+```bash
+docker run -d --platform "$ARCH_PLATFORM" --name aos-nix \
+  --privileged \
+  --cgroupns=host \
+  -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
+  --tmpfs /run --tmpfs /run/lock \
+  ghcr.io/fauust/docker-systemd:ubuntu-24.04
+```
+
+Give systemd a few seconds, then confirm it booted and `systemctl` works:
+
+```bash
+sleep 8
+docker ps --filter name=aos-nix --format '{{.Names}}\t{{.Status}}'   # Up …
+docker exec aos-nix ps -p 1 -o comm=                                 # systemd
+docker exec aos-nix systemctl is-system-running                      # running OR degraded (both fine)
+docker exec aos-nix uname -m                                         # x86_64 / aarch64
+```
+
+`degraded` is normal in a container — a couple of host-oriented units fail to start, but
+the system is booted and unit management works, which is all we need.
+
+To start over at any point: `docker rm -f aos-nix` and repeat this step.
+
+> **Apple Silicon note.** Building Nix inside an **emulated amd64** container fails at the
+> `setup_default_profile` step (`getting pseudoterminal attributes: Function not
+> implemented`) — QEMU doesn't implement every syscall Nix needs. On Apple Silicon use
+> **arm64** (native) for this walkthrough. amd64 works natively on real x86 hardware.
+
+## Step 2 — Install the Nix-installer prerequisites
+
+The image is a minimal Ubuntu; the Determinate Nix installer needs a few tools to fetch
+and verify itself:
+
+```bash
+docker exec aos-nix bash -c \
+  'apt-get update -qq && DEBIAN_FRONTEND=noninteractive \
+   apt-get install -y curl xz-utils ca-certificates'
+```
+
+## Step 3 — Install Nix
+
+Install Nix with the [Determinate Systems installer](https://install.determinate.systems).
+The container runs real systemd, so the installer wires the Nix daemon as a systemd
+service and enables flakes by default:
+
+```bash
+docker exec aos-nix bash -c \
+  "curl --proto '=https' --tlsv1.2 -sSfL https://install.determinate.systems/nix \
+   | sh -s -- install linux --no-confirm"
+```
+
+Load Nix into the current shell and confirm the daemon is up with flakes enabled:
+
+```bash
+docker exec aos-nix bash -lc 'nix --version && nix store info && nix flake --help >/dev/null && echo flakes-ok'
+```
+
+`bash -lc` runs a **login** shell, which sources
+`/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh` so `nix` is on `PATH`. In a
+non-login shell, source that file first.
+
+## Step 4 — Build the signature-verified satellite
+
+Copy this `tools/nixpkg` flake into the container and build the satellite from it:
+
+```bash
+# From the repo root on your host:
+docker exec aos-nix mkdir -p /work
+docker cp tools/nixpkg aos-nix:/work/nixpkg
+
+docker exec aos-nix bash -lc 'cd /work/nixpkg && nix build ".#packages.'"$NIX_SYSTEM"'.satellite" --print-out-paths'
+```
+
+> **Why copy instead of a git checkout?** The signed CTF tarball and public key live under
+> `vendor/`, which is **git-ignored** (we don't commit binaries). A flake built from the
+> git tree can't see ignored files, so the build would fail with `vendor/… does not
+> exist`. Copying the directory in with `docker cp` (or a bind mount) gives Nix the real
+> files. On the host you can build the same way with `nix build
+> 'path:/abs/path/to/tools/nixpkg#…'` — a `path:` ref copies the whole directory,
+> ignored files included.
+
+The build runs the whole supply chain: it fetches the pinned **OCM 0.15.0** CLI, checks
+the CTF's sha256, runs **`ocm verify component-version`** against the RSASSA-PSS public
+key (a bad or missing signature **fails the build**), then extracts the arch-matched
+binary. The result is a static Go executable:
+
+```bash
+docker exec aos-nix bash -lc \
+  'B=$(cd /work/nixpkg && nix build ".#packages.'"$NIX_SYSTEM"'.satellite" --print-out-paths --no-link); \
+   file "$B"/bin/f5-vlan-demo-satellite; \
+   timeout 5 "$B"/bin/f5-vlan-demo-satellite --help || true'
+```
+
+You'll see it start, log JSON, and then retry connecting to **Doris on port 9030** before
+giving up — expected, since Doris isn't running yet. That's Step 5.
+
+### Inspecting the encoded dependency tree
+
+Nix encodes every package's full dependency tree in the flake, and you can query it on a
+built result. Two different trees matter:
+
+**Runtime closure** — exactly what must be present to *run* the package:
+
+```bash
+docker exec aos-nix bash -lc \
+  'B=$(cd /work/nixpkg && nix build ".#packages.'"$NIX_SYSTEM"'.satellite" --print-out-paths --no-link); \
+   nix path-info -r "$B"'
+```
+
+For the satellite this prints **one path — itself**. It is a statically-linked Go binary
+with zero runtime dependencies, so its closure is just the binary. Nothing else is needed
+at runtime. (This is why there is no "bundle the satellite with its deps" step: there are
+no runtime deps to bundle.)
+
+**Build-time tree** — everything Nix needs to *produce* the package (the OCM CLI, the
+signature-verify gate, the whole compiler toolchain). Much larger:
+
+```bash
+docker exec aos-nix bash -lc \
+  'cd /work/nixpkg; drv=$(nix path-info --derivation ".#packages.'"$NIX_SYSTEM"'.satellite"); \
+   nix-store -q --tree "$drv" | head -40'
+```
+
+The satellite→Doris relationship is **not** in either tree: the satellite talks to Doris
+over a TCP socket at runtime, so Doris is a peer *service*, not a package dependency. That
+relationship is encoded in the orchestration layer instead — the systemd units generated
+by `.#doris-systemd` (Step 5) and, for the appliance, the NixOS system config in
+`tools/nixos`. Package deps live in the `.nix` files; "these services run together" lives
+in the units.
+
+## Step 5 — Build and run Apache Doris
+
+### 5a. Build the Doris package
+
+```bash
+docker exec aos-nix bash -lc 'cd /work/nixpkg && nix build ".#packages.'"$NIX_SYSTEM"'.doris" --print-out-paths'
+```
+
+This fetches the pinned Doris 4.1.5 tarball and autopatchelf's its FE (Java) and BE (C++)
+binaries to run under Nix's glibc.
+
+> **The Doris tarball is large (~4.4 GB) and only distributed via the Aliyun CDN** — there
+> is no Apache mirror. That endpoint can be very slow. If the build stalls on the
+> download, fetch the tarball on your host (a faster link) and inject it into the store so
+> the fixed-output fetch is satisfied without re-downloading:
+>
+> ```bash
+> # on the host — the arm64 or x64 file matching your $NIX_SYSTEM:
+> curl -LO https://apache-doris-releases.oss-accelerate.aliyuncs.com/apache-doris-4.1.5-bin-arm64.tar.gz
+> docker cp apache-doris-4.1.5-bin-arm64.tar.gz aos-nix:/tmp/
+> docker exec aos-nix bash -lc \
+>   'nix store prefetch-file --hash-type sha512 \
+>      --expected-hash sha512-AKwYGV/iMmgnZ1fP0W46SQ5tx0cDSMVTpbr4+TOqDnzYTHoB++j7PVghaGz/ByQq70BDbFU+vTtFmco7SbNdPw== \
+>      file:///tmp/apache-doris-4.1.5-bin-arm64.tar.gz'
+> ```
+> (That SRI hash is the arm64 one pinned in `nix/doris.nix`; use the x64 hash for amd64.)
+> Re-run the build afterward — it skips the download.
+
+### 5b. Build the systemd installer and install the services
+
+```bash
+docker exec aos-nix bash -lc 'cd /work/nixpkg && nix build ".#packages.'"$NIX_SYSTEM"'.doris-systemd" -o /tmp/doris-systemd'
+docker exec aos-nix /tmp/doris-systemd/doris-ctl.sh install
+```
+
+`doris-ctl.sh install` (no `make` needed) creates the `aos-satellite` user, drops the
+`vm.max_map_count=2000000` sysctl, symlinks the three units into `/etc/systemd/system`,
+and `systemctl enable --now`s them. The units carry absolute `/nix/store` paths and set
+everything Doris needs on a non-NixOS host:
+
+- `JAVA_HOME` → Nix `jdk17`, `LD_LIBRARY_PATH` → Nix glibc (so BE finds its NSS modules),
+- `TZDIR` → Nix `tzdata` (BE aborts with *"Cannot find system tzfile"* without it),
+- `StateDirectory=doris/{fe,be}` (systemd must create `/var/lib/doris/{fe,be}` *before*
+  the unit's `WorkingDirectory`, or it crash-loops with `200/CHDIR`),
+- `priority_networks` derived from the real route (never loopback — a loopback BE can't be
+  reached by the FE's DNS cache and reports zero capacity),
+- `RestrictAddressFamilies=…AF_NETLINK` (BE's `getifaddrs()` needs it).
+
+> `install` runs `systemctl enable --now`, which also *starts* the services; the
+> `doris-register-be` oneshot then waits for the FE to accept connections. On first boot
+> the FE takes ~1–2 min to initialize before that completes.
+
+### 5c. Confirm the cluster is healthy
+
+```bash
+docker exec aos-nix bash -lc 'systemctl is-active doris-fe doris-be'
+docker exec aos-nix bash -lc \
+  'MYSQL=$(ls /nix/store/*-mariadb-client-*/bin/mysql | head -1); \
+   "$MYSQL" -h127.0.0.1 -P9030 -uroot -e "SHOW BACKENDS\G"'
+```
+
+A healthy single-node cluster shows the BE with `Alive: true` and a non-zero
+`AvailCapacity`:
+
+```
+BackendId: 1794816921471
+     Host: 172.17.0.2          # the routable IP, NOT 127.0.0.1
+    Alive: true
+AvailCapacity: 67.705 GB
+   ErrMsg:
+```
+
+To remove everything later: `docker exec aos-nix /tmp/doris-systemd/doris-ctl.sh uninstall`.
+
+## Step 6 — Run the satellite against Doris
+
+With Doris serving on 9030, run the satellite:
+
+```bash
+docker exec aos-nix bash -lc \
+  'BIN=$(ls -d /nix/store/*-f5-vlan-demo-satellite-0.0.3/bin/f5-vlan-demo-satellite | head -1); \
+   timeout 20 "$BIN" || true'
+```
+
+It connects to Doris and starts its components — you'll see JSON logs ending with:
+
+```
+"msg":"running","component":"satellite","collectors":1,"observers":1,"operators":1
+```
+
+That's the whole stack: a signature-verified satellite built from an OCM component, its
+Apache Doris datastore, and the portable systemd integration — all produced by `nix build`
+from this one flake, running on a plain Ubuntu host.
