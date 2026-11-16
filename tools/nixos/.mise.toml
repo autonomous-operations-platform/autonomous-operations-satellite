@@ -1,0 +1,129 @@
+# .mise.toml — folder-scoped build toolchain for the AOS satellite NixOS IMAGE layer.
+#
+# This is the image layer (tools/nixos): it consumes the package flake (tools/nixpkg,
+# via the `aos-nixpkg` input = path:../nixpkg) and assembles the bootable, hardened,
+# FIPS-wired NixOS appliance image.
+#
+# Because the `aos-nixpkg` input is a RELATIVE path (path:../nixpkg), these tasks build
+# the flake through the GIT TREE with a `?dir=` selector from the REPO ROOT — a relative
+# path input resolves against the repo, not against a `path:` store copy. So every task
+# mounts the repo root at /work and targets `git+file:///work?dir=tools/nixos#…`.
+#
+# The satellite payload the image embeds is built from tools/nixpkg/vendor/, which is
+# git-ignored. For the git-tree build to see it, the tasks copy the whole working tree
+# into a scratch git repo inside the container and `git add -f` the ignored vendor dir —
+# so Nix's git source includes it WITHOUT touching your real repo or committing binaries.
+
+[env]
+NIX_IMAGE = "nixos/nix:2.31.2@sha256:29fc5fe207f159ceb0143c25c19c774062fee02ce5eda118f3067547b3054894"
+NIX_STORE_VOLUME = "aos-nix-store"
+# NIX_SYSTEM = "x86_64-linux"
+# NIX_PLATFORM = "linux/amd64"
+NIX_SYSTEM = "aarch64-linux"
+NIX_PLATFORM = "linux/arm64"
+
+# Shared prelude (ONE line so it composes safely inside `sh -c "$_stage && nix …"`): stage
+# the repo in a scratch git tree that INCLUDES the git-ignored vendor/, so `git+file:` sees
+# the satellite payload. Produces /stage as a git repo Nix can read.
+_stage = "set -e; rm -rf /stage; cp -a /work /stage; cd /stage; git config --global --add safe.directory /stage; git init -q; git add -A 2>/dev/null || true; git add -f tools/nixpkg/vendor 2>/dev/null || true; git -c user.email=b@b -c user.name=b commit -qm stage"
+
+[tasks.image]
+description = "Build the bootable qcow2 NixOS image (systemd-repart, host-side, no nested VM)."
+run = """
+ATTR="${1:-packages.$NIX_SYSTEM.image}"
+docker run --rm \
+  --platform "$NIX_PLATFORM" \
+  --security-opt seccomp=unconfined \
+  -v "$PWD/../..":/work \
+  -v "$NIX_STORE_VOLUME":/nix \
+  "$NIX_IMAGE" \
+  sh -c "$_stage && nix --experimental-features 'nix-command flakes' build 'git+file:///stage?dir=tools/nixos#'\\"$ATTR\\" --option sandbox false --print-out-paths"
+"""
+# Two flags make systemd-repart's `unshare --map-root-user` work in the container:
+#   --security-opt seccomp=unconfined : Docker's default seccomp blocks `unshare`.
+#   --option sandbox false            : so repart's unshare is not nested inside Nix's
+#                                       own sandbox namespace.
+
+[tasks.boot-test]
+description = "NixOS VM test: boot the satellite host under QEMU; assert FIPS active + service running (ADR-024)."
+run = """
+docker run --rm \
+  --platform "$NIX_PLATFORM" \
+  -v "$PWD/../..":/work \
+  -v "$NIX_STORE_VOLUME":/nix \
+  "$NIX_IMAGE" \
+  sh -c "$_stage && nix --experimental-features 'nix-command flakes' build 'git+file:///stage?dir=tools/nixos#checks.$NIX_SYSTEM.boot-test' --system-features 'kvm nixos-test benchmark big-parallel' --print-out-paths"
+"""
+# --system-features: the VM test needs the `kvm` and `nixos-test` sandbox features. The
+# Colima VM has no /dev/kvm, so QEMU runs under TCG emulation (slow — and the FIPS kernel
+# is recompiled). On a KVM-capable builder this is fast and the flag is unnecessary.
+
+[tasks.toplevel]
+description = "Build the air-gapped nixos-rebuild switch closure (ADR-024 generation-based A/B switch)."
+run = """
+docker run --rm \
+  --platform "$NIX_PLATFORM" \
+  -v "$PWD/../..":/work \
+  -v "$NIX_STORE_VOLUME":/nix \
+  "$NIX_IMAGE" \
+  sh -c "$_stage && nix --experimental-features 'nix-command flakes' build 'git+file:///stage?dir=tools/nixos#nixosConfigurations.satellite-host.config.system.build.toplevel' --print-out-paths"
+"""
+
+[tasks.run]
+description = "Boot the DEBUG image on macOS under QEMU (hvf) and drop to a serial login shell."
+run = """
+set -euo pipefail
+
+echo ">>> building image-debug (the variant with console login)..."
+OUT=$(docker run --rm \
+  --platform "$NIX_PLATFORM" \
+  --security-opt seccomp=unconfined \
+  -v "$PWD/../..":/work \
+  -v "$NIX_STORE_VOLUME":/nix \
+  "$NIX_IMAGE" \
+  sh -c "$_stage && nix --experimental-features 'nix-command flakes' build 'git+file:///stage?dir=tools/nixos#packages.$NIX_SYSTEM.image-debug' --option sandbox false --print-out-paths --no-link" | tail -1)
+echo ">>> built: $OUT"
+
+QCOW_IN_STORE=$(docker run --rm -v "$NIX_STORE_VOLUME":/nix "$NIX_IMAGE" sh -c "ls \\"$OUT\\"/*.qcow2 2>/dev/null | head -1")
+echo ">>> qcow in store: $QCOW_IN_STORE"
+
+mkdir -p .run
+docker run --rm -v "$NIX_STORE_VOLUME":/nix "$NIX_IMAGE" cat "$QCOW_IN_STORE" > .run/satellite-host-debug.qcow2
+echo ">>> copied $(du -h .run/satellite-host-debug.qcow2 | cut -f1) to .run/satellite-host-debug.qcow2"
+
+FW=/opt/homebrew/share/qemu/edk2-aarch64-code.fd
+echo ">>> booting (serial console in this terminal; login as root / password: nixos)"
+echo ">>> to quit QEMU: Ctrl-a then x"
+exec qemu-system-aarch64 \
+  -machine virt -cpu host -accel hvf \
+  -m 8192 -smp 2 \
+  -drive if=pflash,format=raw,readonly=on,file="$FW" \
+  -drive if=virtio,format=qcow2,file=.run/satellite-host-debug.qcow2 \
+  -nographic \
+  -netdev user,id=net0,hostfwd=tcp::2222-:22 \
+  -device virtio-net-pci,netdev=net0
+"""
+# Runs on macOS (not in the container): hvf is a Darwin hypervisor, -nographic needs the
+# serial console attached to your terminal. Uses Homebrew qemu + edk2 firmware. Boots
+# image-debug only — the hardened `image` has no login by design.
+
+[tasks.gc]
+description = "Garbage-collect old builds from the Nix store volume (frees space; repairs the container profile link GC deletes)."
+run = """
+set -euo pipefail
+echo ">>> store usage before:"
+docker run --rm -v "$NIX_STORE_VOLUME":/nix "$NIX_IMAGE" df -h /nix | tail -1
+echo ">>> collecting garbage..."
+docker run --rm -v "$NIX_STORE_VOLUME":/nix "$NIX_IMAGE" nix-collect-garbage -d
+echo ">>> repairing container profile link..."
+PROFILE_ENV=$(docker run --rm "$NIX_IMAGE" readlink -f /nix/var/nix/profiles/default)
+docker run --rm -v "$NIX_STORE_VOLUME":/vol "$NIX_IMAGE" \
+  sh -c "mkdir -p /vol/var/nix/profiles && ln -sfn '$PROFILE_ENV' /vol/var/nix/profiles/default-1-link"
+echo ">>> store usage after:"
+docker run --rm -v "$NIX_STORE_VOLUME":/nix "$NIX_IMAGE" df -h /nix | tail -1
+echo ">>> done."
+"""
+# The store volume fills after a few image builds (each ~8 GiB closure). GC reclaims it,
+# but also deletes the nixos/nix image's own profile generation link, so the repair step
+# above is mandatory — otherwise future containers mounting the volume die with
+# `exec: "sh" not found`.
