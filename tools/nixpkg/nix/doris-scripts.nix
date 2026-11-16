@@ -8,7 +8,7 @@
 #     putting getopt/sed/awk/ip/… on PATH — the original `dorisScriptPath` problem), and
 #   - shellcheck runs at build time, and
 #   - BOTH consumers — the NixOS module (doris-module.nix) and the portable systemd
-#     installer (doris-systemd.nix) — call the exact same wrapped scripts.
+#     installer (satellite-systemd.nix) — call the exact same wrapped scripts.
 #
 # The scripts take their formerly-interpolated values (package path, priority_networks,
 # mysql client) as arguments / environment variables instead, so they are distro-agnostic

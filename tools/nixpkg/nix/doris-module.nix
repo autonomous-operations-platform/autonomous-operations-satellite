@@ -26,7 +26,7 @@ let
   # The Doris runtime logic (seed / derive-netaddr / set-priority-networks / register)
   # lives in ../scripts/*.sh, wrapped by writeShellApplication in doris-scripts.nix.
   # SINGLE SOURCE OF TRUTH: this NixOS module and the portable systemd installer
-  # (doris-systemd.nix) both consume these same wrapped scripts. The wrappers bake the
+  # (satellite-systemd.nix) both consume these same wrapped scripts. The wrappers bake the
   # right tools onto each script's PATH (util-linux/getopt, gnused, gnugrep, gawk,
   # procps, iproute2, coreutils; mariadb.client's `mysql` for the register script), so
   # the module no longer needs its own `dorisScriptPath`/`mysqlClient`.

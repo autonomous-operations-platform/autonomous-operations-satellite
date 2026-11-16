@@ -23,7 +23,7 @@ The bootable **NixOS appliance image** is a separate layer that consumes this fl
 | `packages.<system>.ctf-verified` | Unpacks the OCM CTF in a **sha256-gated + `ocm verify` signature-gated** way at build time. An independently buildable security gate. |
 | `packages.<system>.satellite` | The payload binary, extracted from the *verified* CTF. `default`. |
 | `packages.<system>.doris` | Apache Doris (FE + BE), patched from the upstream release tarball for Nix. |
-| `packages.<system>.doris-systemd` | Portable systemd units + a `doris-ctl.sh install/uninstall` script, so Doris runs on any systemd Linux with Nix. |
+| `packages.<system>.satellite-systemd` | Portable systemd units (satellite + Doris FE/BE) + an `aos-ctl.sh install/uninstall` script, so the whole stack runs on any systemd Linux with Nix. |
 | `apps.<system>.default` | `nix run` entry point → runs the verified satellite. |
 | `nixosModules.default` | Hardened systemd service for the satellite. Self-sufficient: `enable = true` is enough. |
 | `nixosModules.doris` | NixOS module for the Doris FE + BE services. |
@@ -37,12 +37,12 @@ the seed/derive/register shell logic lives **once** in `scripts/doris-*.sh` (wra
 `nix/doris-scripts.nix`) and is shared by both the NixOS module and the portable installer:
 
 ```
-            scripts/doris-*.sh   (single source of truth)
+            scripts/doris-*.sh   (single source of Doris runtime logic)
                      │
         ┌────────────┴────────────┐
-   doris-module.nix          doris-systemd.nix
-   (NixOS module;            (portable units + doris-ctl.sh;
-    used by ../nixos image)   used on any systemd Linux)
+   doris-module.nix          satellite-systemd.nix
+   (NixOS module;            (portable units + aos-ctl.sh for the whole
+    used by ../nixos image)   stack; used on any systemd Linux)
 ```
 
 ## File structure
@@ -59,7 +59,7 @@ tools/nixpkg/
 │   ├── doris.nix              # Packages Apache Doris from the upstream release tarball.
 │   ├── doris-module.nix       # NixOS module: the Doris FE and BE services.
 │   ├── doris-scripts.nix      # Wraps scripts/doris-*.sh (single source of Doris runtime logic).
-│   ├── doris-systemd.nix      # Portable systemd units + doris-ctl.sh installer.
+│   ├── satellite-systemd.nix  # Portable systemd units (satellite + Doris) + aos-ctl.sh installer.
 │   └── ocm.nix                # Pins the OCM CLI used by the build.
 ├── scripts/doris-*.sh     # The Doris runtime logic (seed / derive-netaddr / set-priority-networks / register).
 ├── docs/run-on-ubuntu.md  # Step-by-step: run the whole stack on a plain Ubuntu host with Nix.
@@ -179,19 +179,22 @@ modules = [
 For hosts that are not NixOS but have Nix and systemd (Ubuntu, Debian, Fedora, RHEL…):
 
 ```sh
-nix build 'path:tools/nixpkg#doris-systemd' -o /tmp/doris-systemd
-sudo /tmp/doris-systemd/doris-ctl.sh install     # create user, drop sysctl, enable --now
+nix build 'path:tools/nixpkg#satellite-systemd' -o /tmp/satellite-systemd
+sudo /tmp/satellite-systemd/aos-ctl.sh install     # create user, drop sysctl, enable --now
 # …
-sudo /tmp/doris-systemd/doris-ctl.sh uninstall
+sudo /tmp/satellite-systemd/aos-ctl.sh uninstall
 ```
 
-`doris-ctl.sh` (no `make` needed) symlinks three systemd units into
-`/etc/systemd/system`, drops `vm.max_map_count` via `sysctl.d`, creates the `aos-satellite`
-user, and `systemctl enable --now`s FE, BE, and the register one-shot. The generated units
-carry absolute `/nix/store` paths and set everything Doris needs on a non-NixOS host
-(`JAVA_HOME`, `LD_LIBRARY_PATH` to Nix glibc for NSS, `TZDIR` to Nix tzdata,
-`StateDirectory`, routable `priority_networks`, `AF_NETLINK`). They are host-specific —
-regenerate with `nix build` per machine.
+`aos-ctl.sh` (no `make` needed) symlinks **four** systemd units into `/etc/systemd/system`,
+drops `vm.max_map_count` via `sysctl.d`, creates the `aos-satellite` user, and
+`systemctl enable --now`s them in order: Doris FE, BE, the register one-shot, then
+`aos-satellite`. The satellite unit is ordered `After=doris-register-be.service`, so Doris
+is a **service dependency** of the satellite (not a Nix-package one — the satellite is a
+static binary that talks to Doris over TCP). The generated units carry absolute
+`/nix/store` paths and set everything the stack needs on a non-NixOS host (`JAVA_HOME`,
+`LD_LIBRARY_PATH` to Nix glibc for NSS, `TZDIR` to Nix tzdata, `StateDirectory`, routable
+`priority_networks`, `AF_NETLINK`; the satellite unit mirrors the NixOS module's
+hardening). They are host-specific — regenerate with `nix build` per machine.
 
 A full worked example on a plain Ubuntu host (install Nix → build → run Doris → run the
 satellite) is in **[`docs/run-on-ubuntu.md`](docs/run-on-ubuntu.md)**.
@@ -224,7 +227,7 @@ real `/nix` and **is** the builder. It pins the `ocm` CLI
 mise run nix-shell-up    # start the pinned Nix container; confirm flakes enabled
 mise run verify-ctf      # build the standalone signature-verification gate
 mise run build           # nix build path:/work#packages.<system>.satellite
-mise run doris-systemd   # build the portable systemd installer
+mise run satellite-systemd   # build the portable systemd installer (satellite + Doris)
 ```
 
 Prerequisite: a Docker-compatible runtime driving **Linux** containers (native Docker /
@@ -236,5 +239,5 @@ Podman on Linux; Colima, Docker Desktop, Rancher, or OrbStack on macOS).
 2. **Negative test (the gate is load-bearing):** corrupt one CTF blob byte in a scratch
    copy → `mise run verify-ctf` must fail (sha256 gate). Restore → succeeds.
 3. `mise run build` → inspect the extracted satellite binary under `result/bin`.
-4. `mise run doris-systemd` → the units + `doris-ctl.sh` build; `grep /nix/store` the units.
+4. `mise run satellite-systemd` → the units + `aos-ctl.sh` build; `grep /nix/store` the units.
 5. For the full stack on a real host, follow [`docs/run-on-ubuntu.md`](docs/run-on-ubuntu.md).

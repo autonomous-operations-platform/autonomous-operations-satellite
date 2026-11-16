@@ -54,11 +54,15 @@
           # this is what `mise run verify-ctf` builds.
           ctf-verified = c.ctfVerified;
 
-          # Portable systemd integration: unit files + Makefile installer for running
-          # Doris FE/BE on any systemd Linux with Nix (not just NixOS). Shares the same
-          # runtime logic as the NixOS module via nix/doris-scripts.nix.
-          #   nix build .#doris-systemd && sudo make -C result install
-          doris-systemd = import ./nix/doris-systemd.nix { pkgs = c.pkgs; };
+          # Portable systemd integration: unit files + aos-ctl.sh installer for running
+          # the whole stack (AOS satellite + Doris FE/BE) on any systemd Linux with Nix,
+          # not just NixOS. Shares the Doris runtime logic with the NixOS module via
+          # nix/doris-scripts.nix; the satellite unit mirrors nix/module.nix's hardening.
+          #   nix build .#satellite-systemd && sudo ./result/aos-ctl.sh install
+          satellite-systemd = import ./nix/satellite-systemd.nix {
+            pkgs = c.pkgs;
+            inherit (c) satellite;
+          };
         });
 
       # ── NixOS modules (consumed by the tools/nixos image layer) ────────────────

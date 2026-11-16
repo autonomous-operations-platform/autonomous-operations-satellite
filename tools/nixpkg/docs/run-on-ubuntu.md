@@ -1,8 +1,3 @@
-<!--
-SPDX-FileCopyrightText: 2026 SAP SE or an SAP affiliate company and Autonomous Operations Platform contributors
-
-SPDX-License-Identifier: Apache-2.0
--->
 
 # Run the satellite on Ubuntu with Nix
 
@@ -20,8 +15,8 @@ installed step by step below.
 
 ## Why this base image
 
-We want Doris to run under **systemd**, exactly as it would on a real server
-(`systemctl start`, the generated units, the `make install` path). The official
+We want the satellite and Doris to run under **systemd**, exactly as they would on a real
+server (`systemctl start`, the generated units, the `aos-ctl.sh install` path). The official
 `ubuntu` / `debian` / `fedora` container images deliberately **strip systemd**, so they
 can't boot it as PID 1 without a custom Dockerfile. We therefore use a community image
 that packages a stock Ubuntu userland **with a working systemd**:
@@ -124,11 +119,10 @@ docker exec aos-nix bash -lc 'cd /work/nixpkg && nix build ".#packages.'"$NIX_SY
 
 > **Why copy instead of a git checkout?** The signed CTF tarball and public key live under
 > `vendor/`, which is **git-ignored** (we don't commit binaries). A flake built from the
-> git tree can't see ignored files, so the build would fail with `vendor/… does not
-> exist`. Copying the directory in with `docker cp` (or a bind mount) gives Nix the real
-> files. On the host you can build the same way with `nix build
-> 'path:/abs/path/to/tools/nixpkg#…'` — a `path:` ref copies the whole directory,
-> ignored files included.
+> git tree can't see ignored files, so the build would fail with `vendor/… does not exist`.
+> Copying the directory in with `docker cp` (or a bind mount) gives Nix the real
+> files. On the host you can build the same way with `nix build 'path:/abs/path/to/tools/nixpkg#…'` —
+> a `path:` ref copies the whole directory, ignored files included.
 
 The build runs the whole supply chain: it fetches the pinned **OCM 0.15.0** CLI, checks
 the CTF's sha256, runs **`ocm verify component-version`** against the RSASSA-PSS public
@@ -175,9 +169,9 @@ docker exec aos-nix bash -lc \
 The satellite→Doris relationship is **not** in either tree: the satellite talks to Doris
 over a TCP socket at runtime, so Doris is a peer *service*, not a package dependency. That
 relationship is encoded in the orchestration layer instead — the systemd units generated
-by `.#doris-systemd` (Step 5) and, for the appliance, the NixOS system config in
-`tools/nixos`. Package deps live in the `.nix` files; "these services run together" lives
-in the units.
+by `.#satellite-systemd` (Step 5), where `aos-satellite.service` is ordered after the Doris
+units, and, for the appliance, the NixOS system config in `tools/nixos`. Package deps live
+in the `.nix` files; "these services run together" lives in the units.
 
 ## Step 5 — Build and run Apache Doris
 
@@ -210,14 +204,15 @@ binaries to run under Nix's glibc.
 ### 5b. Build the systemd installer and install the services
 
 ```bash
-docker exec aos-nix bash -lc 'cd /work/nixpkg && nix build ".#packages.'"$NIX_SYSTEM"'.doris-systemd" -o /tmp/doris-systemd'
-docker exec aos-nix /tmp/doris-systemd/doris-ctl.sh install
+docker exec aos-nix bash -lc 'cd /work/nixpkg && nix build ".#packages.'"$NIX_SYSTEM"'.satellite-systemd" -o /tmp/satellite-systemd'
+docker exec aos-nix /tmp/satellite-systemd/aos-ctl.sh install
 ```
 
-`doris-ctl.sh install` (no `make` needed) creates the `aos-satellite` user, drops the
-`vm.max_map_count=2000000` sysctl, symlinks the three units into `/etc/systemd/system`,
-and `systemctl enable --now`s them. The units carry absolute `/nix/store` paths and set
-everything Doris needs on a non-NixOS host:
+`aos-ctl.sh install` creates the `aos-satellite` user, drops the
+`vm.max_map_count=2000000` sysctl, symlinks **four** units into `/etc/systemd/system`, and
+`systemctl enable --now`s them in order: `doris-fe`, `doris-be`, `doris-register-be`, then
+`aos-satellite`. The Doris units carry absolute `/nix/store` paths and set everything Doris
+needs on a non-NixOS host:
 
 - `JAVA_HOME` → Nix `jdk17`, `LD_LIBRARY_PATH` → Nix glibc (so BE finds its NSS modules),
 - `TZDIR` → Nix `tzdata` (BE aborts with *"Cannot find system tzfile"* without it),
@@ -227,9 +222,18 @@ everything Doris needs on a non-NixOS host:
   reached by the FE's DNS cache and reports zero capacity),
 - `RestrictAddressFamilies=…AF_NETLINK` (BE's `getifaddrs()` needs it).
 
+The `aos-satellite.service` unit runs the verified satellite binary as the `aos-satellite`
+user, hardened the same way as the NixOS module (dedicated user, seccomp allowlist, no
+capabilities). It is ordered `After=doris-register-be.service`, so Doris is a **service
+dependency** of the satellite — one `systemctl start` brings the whole stack up in order.
+(Doris is *not* a Nix-package dependency: the satellite is a static binary that talks to
+Doris over TCP, so its closure stays just itself.)
+
 > `install` runs `systemctl enable --now`, which also *starts* the services; the
-> `doris-register-be` oneshot then waits for the FE to accept connections. On first boot
-> the FE takes ~1–2 min to initialize before that completes.
+> `doris-register-be` oneshot waits for the FE to accept connections, and `aos-satellite`
+> starts after it. On first boot the FE takes ~1–2 min to initialize before the chain
+> completes. The satellite's own DB-retry loop (plus `Restart=on-failure`) is the real
+> readiness gate.
 
 ### 5c. Confirm the cluster is healthy
 
@@ -251,24 +255,30 @@ AvailCapacity: 67.705 GB
    ErrMsg:
 ```
 
-To remove everything later: `docker exec aos-nix /tmp/doris-systemd/doris-ctl.sh uninstall`.
+To remove everything later: `docker exec aos-nix /tmp/satellite-systemd/aos-ctl.sh uninstall`.
 
-## Step 6 — Run the satellite against Doris
+## Step 6 — Confirm the satellite is running
 
-With Doris serving on 9030, run the satellite:
+The installer already started `aos-satellite.service` (it is ordered after Doris, so it
+came up once the cluster formed). Check it like any other service:
 
 ```bash
-docker exec aos-nix bash -lc \
-  'BIN=$(ls -d /nix/store/*-f5-vlan-demo-satellite-0.0.3/bin/f5-vlan-demo-satellite | head -1); \
-   timeout 20 "$BIN" || true'
+docker exec aos-nix bash -lc 'systemctl is-active aos-satellite'
+docker exec aos-nix bash -lc 'journalctl -u aos-satellite --no-pager -n 12'
 ```
 
-It connects to Doris and starts its components — you'll see JSON logs ending with:
+The journal ends with the satellite's components coming up:
 
 ```
 "msg":"running","component":"satellite","collectors":1,"observers":1,"operators":1
 ```
 
+> On this older in-container systemd you may see
+> `System call ~@privileged is not known, ignoring` — harmless; that systemd version
+> doesn't recognize those seccomp group names and degrades gracefully. A current
+> NixOS/systemd applies them.
+
 That's the whole stack: a signature-verified satellite built from an OCM component, its
-Apache Doris datastore, and the portable systemd integration — all produced by `nix build`
-from this one flake, running on a plain Ubuntu host.
+Apache Doris datastore, and the portable systemd integration — the satellite and all three
+Doris units managed by `systemctl`, all produced by `nix build` from this one flake,
+running on a plain Ubuntu host.
