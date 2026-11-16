@@ -6,7 +6,7 @@
 # "does the image actually come up FIPS-enabled with the service running?" — replacing
 # a manual `cat /proc/sys/crypto/fips_enabled` on a hand-booted qcow.
 
-{ pkgs, satellite }:
+{ pkgs, satellite, satelliteModule }:
 
 pkgs.testers.runNixOSTest {
   name = "aos-satellite-host-boot";
@@ -14,7 +14,7 @@ pkgs.testers.runNixOSTest {
   node.specialArgs = { inherit satellite; };
 
   nodes.machine = { config, pkgs, satellite, ... }: {
-    imports = [ ./module.nix ./fips.nix ];
+    imports = [ satelliteModule ./fips.nix ];
 
     services.aosSatellite = {
       enable = true;
@@ -51,7 +51,7 @@ pkgs.testers.runNixOSTest {
     # The service is executing the verified satellite from the Nix store.
     machine.succeed(
         "systemctl show aos-satellite.service -p ExecStart "
-        "| grep -q /bin/hello-world-satellite"
+        "| grep -q /bin/f5-vlan-demo-satellite"
     )
   '';
 }
