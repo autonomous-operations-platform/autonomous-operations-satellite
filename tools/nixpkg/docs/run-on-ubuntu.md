@@ -10,8 +10,9 @@ Desktop).
 You only need **Docker**. Everything else (Nix, OCM, the satellite, Doris, the JDK) is
 installed step by step below.
 
-> Each command runs against a long-lived container named `aos-nix`. Open your own shell
-> into it anytime with `docker exec -it aos-nix bash`.
+> Everything runs in a long-lived container named `aos-nix`. You start it on the host
+> (Step 1), then open a shell **into** it (Step 2) and run the rest from there. A few
+> file-copy steps run back on the host — those are flagged explicitly.
 
 ## Why this base image
 
@@ -72,15 +73,40 @@ To start over at any point: `docker rm -f aos-nix` and repeat this step.
 > implemented`) — QEMU doesn't implement every syscall Nix needs. On Apple Silicon use
 > **arm64** (native) for this walkthrough. amd64 works natively on real x86 hardware.
 
-## Step 2 — Install the Nix-installer prerequisites
+## Step 2 — Open a shell inside the container
+
+The rest of this walkthrough runs **from inside** `aos-nix`. Open an interactive shell
+now and stay in it for every step that follows:
+
+```bash
+docker exec -it aos-nix bash
+```
+
+Your prompt is now the container's `root@…#`. Commands below are typed at that prompt —
+no `docker exec` prefix. The two architecture variables you exported on the host do
+**not** carry in, so re-set `$NIX_SYSTEM` here to match the container you started:
+
+```bash
+# inside the container — pick the one matching Step 1's $ARCH_PLATFORM:
+export NIX_SYSTEM=aarch64-linux    # linux/arm64
+# export NIX_SYSTEM=x86_64-linux   # linux/amd64
+uname -m                           # sanity check: aarch64 / x86_64
+```
+
+> **Getting back in.** If you exit the shell (or open a second terminal), just run
+> `docker exec -it aos-nix bash` again and re-`export NIX_SYSTEM=…`. The container keeps
+> running in the background between shells. A handful of steps still run **on the host**
+> (copying files in with `docker cp`); those are called out explicitly and keep their
+> `docker …` form.
+
+## Step 3 — Install the Nix-installer prerequisites
 
 The image is a minimal Ubuntu; the Determinate Nix installer needs a few tools to fetch
 and verify itself:
 
 ```bash
-docker exec aos-nix bash -c \
-  'apt-get update -qq && DEBIAN_FRONTEND=noninteractive \
-   apt-get install -y curl xz-utils ca-certificates'
+apt-get update -qq && DEBIAN_FRONTEND=noninteractive \
+  apt-get install -y curl xz-utils ca-certificates
 ```
 
 ## Step 3 — Install Nix
@@ -90,31 +116,42 @@ The container runs real systemd, so the installer wires the Nix daemon as a syst
 service and enables flakes by default:
 
 ```bash
-docker exec aos-nix bash -c \
-  "curl --proto '=https' --tlsv1.2 -sSfL https://install.determinate.systems/nix \
-   | sh -s -- install linux --no-confirm"
+curl --proto '=https' --tlsv1.2 -sSfL https://install.determinate.systems/nix \
+  | sh -s -- install linux --no-confirm
 ```
 
-Load Nix into the current shell and confirm the daemon is up with flakes enabled:
+The installer edits the shell profile, but your current shell was started before that, so
+`nix` is not on `PATH` yet. Source the profile to load it into **this** shell:
 
 ```bash
-docker exec aos-nix bash -lc 'nix --version && nix store info && nix flake --help >/dev/null && echo flakes-ok'
+. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
 ```
 
-`bash -lc` runs a **login** shell, which sources
-`/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh` so `nix` is on `PATH`. In a
-non-login shell, source that file first.
+Confirm the daemon is up with flakes enabled:
+
+```bash
+nix --version && nix store info && nix flake --help >/dev/null && echo flakes-ok
+```
+
+> Every new shell you open into the container (`docker exec -it aos-nix bash`) is a
+> non-login shell and needs that same `. …/nix-daemon.sh` line before `nix` works. A fresh
+> **login** shell (`bash -l`) sources it automatically. Re-set `$NIX_SYSTEM` too.
 
 ## Step 4 — Build the signature-verified satellite
 
-Copy this `tools/nixpkg` flake into the container and build the satellite from it:
+This flake lives on your host, so copy it into the container first. Run the `docker cp`
+**on the host** (open a second terminal, or `exit` and come back), then build from inside:
 
 ```bash
-# From the repo root on your host:
+# On the HOST, from the repo root:
 docker exec aos-nix mkdir -p /work
 docker cp tools/nixpkg aos-nix:/work/nixpkg
+```
 
-docker exec aos-nix bash -lc 'cd /work/nixpkg && nix build ".#packages.'"$NIX_SYSTEM"'.satellite" --print-out-paths'
+```bash
+# Back INSIDE the container:
+cd /work/nixpkg
+nix build ".#packages.$NIX_SYSTEM.satellite" --print-out-paths
 ```
 
 > **Why copy instead of a git checkout?** The signed CTF tarball and public key live under
@@ -130,10 +167,9 @@ key (a bad or missing signature **fails the build**), then extracts the arch-mat
 binary. The result is a static Go executable:
 
 ```bash
-docker exec aos-nix bash -lc \
-  'B=$(cd /work/nixpkg && nix build ".#packages.'"$NIX_SYSTEM"'.satellite" --print-out-paths --no-link); \
-   file "$B"/bin/f5-vlan-demo-satellite; \
-   timeout 5 "$B"/bin/f5-vlan-demo-satellite --help || true'
+B=$(nix build ".#packages.$NIX_SYSTEM.satellite" --print-out-paths --no-link)
+file "$B"/bin/f5-vlan-demo-satellite
+timeout 5 "$B"/bin/f5-vlan-demo-satellite --help || true
 ```
 
 You'll see it start, log JSON, and then retry connecting to **Doris on port 9030** before
@@ -147,9 +183,8 @@ built result. Two different trees matter:
 **Runtime closure** — exactly what must be present to *run* the package:
 
 ```bash
-docker exec aos-nix bash -lc \
-  'B=$(cd /work/nixpkg && nix build ".#packages.'"$NIX_SYSTEM"'.satellite" --print-out-paths --no-link); \
-   nix path-info -r "$B"'
+B=$(nix build ".#packages.$NIX_SYSTEM.satellite" --print-out-paths --no-link)
+nix path-info -r "$B"
 ```
 
 For the satellite this prints **one path — itself**. It is a statically-linked Go binary
@@ -161,9 +196,8 @@ no runtime deps to bundle.)
 signature-verify gate, the whole compiler toolchain). Much larger:
 
 ```bash
-docker exec aos-nix bash -lc \
-  'cd /work/nixpkg; drv=$(nix path-info --derivation ".#packages.'"$NIX_SYSTEM"'.satellite"); \
-   nix-store -q --tree "$drv" | head -40'
+drv=$(nix path-info --derivation ".#packages.$NIX_SYSTEM.satellite")
+nix-store -q --tree "$drv" | head -40
 ```
 
 The satellite→Doris relationship is **not** in either tree: the satellite talks to Doris
@@ -178,7 +212,7 @@ in the `.nix` files; "these services run together" lives in the units.
 ### 5a. Build the Doris package
 
 ```bash
-docker exec aos-nix bash -lc 'cd /work/nixpkg && nix build ".#packages.'"$NIX_SYSTEM"'.doris" --print-out-paths'
+nix build ".#packages.$NIX_SYSTEM.doris" --print-out-paths
 ```
 
 This fetches the pinned Doris 4.1.5 tarball and autopatchelf's its FE (Java) and BE (C++)
@@ -186,17 +220,19 @@ binaries to run under Nix's glibc.
 
 > **The Doris tarball is large (~4.4 GB) and only distributed via the Aliyun CDN** — there
 > is no Apache mirror. That endpoint can be very slow. If the build stalls on the
-> download, fetch the tarball on your host (a faster link) and inject it into the store so
-> the fixed-output fetch is satisfied without re-downloading:
+> download, fetch the tarball **on your host** (a faster link) and inject it into the
+> container's store so the fixed-output fetch is satisfied without re-downloading:
 >
 > ```bash
-> # on the host — the arm64 or x64 file matching your $NIX_SYSTEM:
+> # On the HOST — the arm64 or x64 file matching your $NIX_SYSTEM:
 > curl -LO https://apache-doris-releases.oss-accelerate.aliyuncs.com/apache-doris-4.1.5-bin-arm64.tar.gz
 > docker cp apache-doris-4.1.5-bin-arm64.tar.gz aos-nix:/tmp/
-> docker exec aos-nix bash -lc \
->   'nix store prefetch-file --hash-type sha512 \
->      --expected-hash sha512-AKwYGV/iMmgnZ1fP0W46SQ5tx0cDSMVTpbr4+TOqDnzYTHoB++j7PVghaGz/ByQq70BDbFU+vTtFmco7SbNdPw== \
->      file:///tmp/apache-doris-4.1.5-bin-arm64.tar.gz'
+> ```
+> ```bash
+> # INSIDE the container:
+> nix store prefetch-file --hash-type sha512 \
+>   --expected-hash sha512-AKwYGV/iMmgnZ1fP0W46SQ5tx0cDSMVTpbr4+TOqDnzYTHoB++j7PVghaGz/ByQq70BDbFU+vTtFmco7SbNdPw== \
+>   file:///tmp/apache-doris-4.1.5-bin-arm64.tar.gz
 > ```
 > (That SRI hash is the arm64 one pinned in `nix/doris.nix`; use the x64 hash for amd64.)
 > Re-run the build afterward — it skips the download.
@@ -204,8 +240,8 @@ binaries to run under Nix's glibc.
 ### 5b. Build the systemd installer and install the services
 
 ```bash
-docker exec aos-nix bash -lc 'cd /work/nixpkg && nix build ".#packages.'"$NIX_SYSTEM"'.satellite-systemd" -o /tmp/satellite-systemd'
-docker exec aos-nix /tmp/satellite-systemd/aos-ctl.sh install
+nix build ".#packages.$NIX_SYSTEM.satellite-systemd" -o /tmp/satellite-systemd
+/tmp/satellite-systemd/aos-ctl.sh install
 ```
 
 `aos-ctl.sh install` creates the `aos-satellite` user, drops the
@@ -238,10 +274,9 @@ Doris over TCP, so its closure stays just itself.)
 ### 5c. Confirm the cluster is healthy
 
 ```bash
-docker exec aos-nix bash -lc 'systemctl is-active doris-fe doris-be'
-docker exec aos-nix bash -lc \
-  'MYSQL=$(ls /nix/store/*-mariadb-client-*/bin/mysql | head -1); \
-   "$MYSQL" -h127.0.0.1 -P9030 -uroot -e "SHOW BACKENDS\G"'
+systemctl is-active doris-fe doris-be
+MYSQL=$(ls /nix/store/*-mariadb-client-*/bin/mysql | head -1)
+"$MYSQL" -h127.0.0.1 -P9030 -uroot -e "SHOW BACKENDS\G"
 ```
 
 A healthy single-node cluster shows the BE with `Alive: true` and a non-zero
@@ -255,7 +290,7 @@ AvailCapacity: 67.705 GB
    ErrMsg:
 ```
 
-To remove everything later: `docker exec aos-nix /tmp/satellite-systemd/aos-ctl.sh uninstall`.
+To remove everything later: `/tmp/satellite-systemd/aos-ctl.sh uninstall`.
 
 ## Step 6 — Confirm the satellite is running
 
@@ -263,8 +298,8 @@ The installer already started `aos-satellite.service` (it is ordered after Doris
 came up once the cluster formed). Check it like any other service:
 
 ```bash
-docker exec aos-nix bash -lc 'systemctl is-active aos-satellite'
-docker exec aos-nix bash -lc 'journalctl -u aos-satellite --no-pager -n 12'
+systemctl is-active aos-satellite
+journalctl -u aos-satellite --no-pager -n 12
 ```
 
 The journal ends with the satellite's components coming up:
