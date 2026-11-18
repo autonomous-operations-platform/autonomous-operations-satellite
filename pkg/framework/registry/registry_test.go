@@ -17,8 +17,10 @@ import (
 
 type fakeCollector struct{ name string }
 
-func (f *fakeCollector) Name() string                                              { return f.name }
-func (f *fakeCollector) Setup(context.Context, *slog.Logger, store.CollectorStore) {}
+func (f *fakeCollector) Name() string { return f.name }
+func (f *fakeCollector) Setup(context.Context, *slog.Logger, store.CollectorStore) error {
+	return nil
+}
 
 var _ collector.Collector = (*fakeCollector)(nil)
 

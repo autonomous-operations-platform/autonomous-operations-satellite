@@ -1,0 +1,39 @@
+{
+  "resourceLogs": [
+    {
+      "resource": {
+        "attributes": [
+          {"key": "service.name", "value": {"stringValue": "mock-service"}},
+          {"key": "host.cpu.count", "value": {"intValue": "8"}},
+          {"key": "tags", "value": {"arrayValue": {"values": [{"stringValue": "a"}]}}}
+        ]
+      },
+      "scopeLogs": [
+        {
+          "scope": {"name": "mock-service"},
+          "logRecords": [
+            {
+              "timeUnixNano": "1790755918424000000",
+              "observedTimeUnixNano": "1790755918424575488",
+              "body": {"stringValue": "{\"message\": \"<134>2026-06-30T18:54:16Z mock-host-01.example.com mock-proc[1]: msg=\\\"mock event\\\"\", \"fqdn\": \"mock-host-01.example.com\", \"severity_code\": 6, \"sampled\": true, \"meta\": {\"nested\": \"skip\"}, \"source\": \"from-body\"}"},
+              "attributes": [
+                {"key": "source", "value": {"stringValue": "from-record"}},
+                {"key": "service.name", "value": {"stringValue": "record-wins"}},
+                {"key": "retries", "value": {"intValue": 3}},
+                {"key": "ratio", "value": {"doubleValue": 0.5}},
+                {"key": "ok", "value": {"boolValue": false}}
+              ]
+            },
+            {
+              "timeUnixNano": 1790755918425000000,
+              "body": {"intValue": "42"}
+            },
+            {
+              "body": {"stringValue": "plain text line"}
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
