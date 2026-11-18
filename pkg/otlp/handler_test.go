@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -41,6 +42,21 @@ func post(h http.Handler, path string, body io.Reader, header map[string]string)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	return rec
+}
+
+// assertStatusBody checks the OTLP/HTTP error format: a JSON-encoded
+// google.rpc.Status with a message, sent as application/json.
+func assertStatusBody(t *testing.T, rec *httptest.ResponseRecorder) {
+	t.Helper()
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("error Content-Type = %q, want application/json", ct)
+	}
+	var st struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &st); err != nil || st.Message == "" {
+		t.Errorf("error body %q is not a JSON Status with a message", rec.Body)
+	}
 }
 
 func gzipped(t *testing.T, b []byte) *bytes.Buffer {
@@ -138,6 +154,7 @@ func TestHandler_Rejections(t *testing.T) {
 			if rec.Code != tt.status {
 				t.Fatalf("got %d (%q), want %d", rec.Code, rec.Body, tt.status)
 			}
+			assertStatusBody(t, rec)
 			if calls, _ := st.snapshot(); calls != 0 {
 				t.Errorf("store called %d times on a rejected request", calls)
 			}
@@ -272,6 +289,7 @@ func TestHandler_InternalErrorsHidden(t *testing.T) {
 			if rec.Code != tt.status {
 				t.Fatalf("got %d, want %d", rec.Code, tt.status)
 			}
+			assertStatusBody(t, rec)
 			if strings.Contains(rec.Body.String(), dbHost) {
 				t.Errorf("response leaks internal error: %q", rec.Body)
 			}
@@ -293,10 +311,13 @@ func TestHandler_Routing(t *testing.T) {
 	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "POST" {
 		t.Errorf("GET: got %d Allow=%q, want 405 Allow=POST", rec.Code, rec.Header().Get("Allow"))
 	}
+	assertStatusBody(t, rec)
 
-	if rec := post(h, "/v1/traces", strings.NewReader(validTraces), nil); rec.Code != http.StatusNotFound {
+	rec = post(h, "/v1/traces", strings.NewReader(validTraces), nil)
+	if rec.Code != http.StatusNotFound {
 		t.Errorf("unconfigured signal: got %d, want 404", rec.Code)
 	}
+	assertStatusBody(t, rec)
 }
 
 // The decompressed limit must stop reading early, not buffer the whole bomb

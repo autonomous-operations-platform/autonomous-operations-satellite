@@ -2,6 +2,7 @@ package otlp
 
 import (
 	"compress/gzip"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,7 +15,7 @@ import (
 	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/framework/store"
 )
 
-// NewHandler returns a standard net/http handler that serves one endpoint's signal paths.
+// NewHandler serves one endpoint on a server the caller runs. It ignores ep.Addr.
 func NewHandler(ep Endpoint, st store.CollectorStore, logger *slog.Logger) (http.Handler, error) {
 	cfg := Config{Logger: logger, Store: st, Endpoints: []Endpoint{ep}}.withDefaults()
 	if cfg.Store == nil {
@@ -23,16 +24,52 @@ func NewHandler(ep Endpoint, st store.CollectorStore, logger *slog.Logger) (http
 	if err := cfg.Endpoints[0].validate(); err != nil {
 		return nil, err
 	}
-	mux := http.NewServeMux()
-	register(mux, cfg.Endpoints[0], cfg.Store, cfg.Logger)
-	return mux, nil
+	return newMux(routes(cfg.Endpoints[0], cfg.Store, cfg.Logger)), nil
 }
 
-// register adds one route per signal of ep to mux.
-func register(mux *http.ServeMux, ep Endpoint, st store.CollectorStore, logger *slog.Logger) {
+// routes registers each signal path twice. The method-less pattern catches
+// non-POST requests, so they get an OTLP 405 body instead of the mux's plain text.
+func routes(ep Endpoint, st store.CollectorStore, logger *slog.Logger) map[string]http.Handler {
+	r := make(map[string]http.Handler, 2*len(ep.Signals))
 	for _, sig := range ep.Signals {
-		mux.Handle("POST "+ep.signalPath(sig), &ingestHandler{ep: ep, signal: sig, store: st, logger: logger})
+		r["POST "+ep.signalPath(sig)] = &ingestHandler{
+			ep:     ep,
+			signal: sig,
+			store:  st,
+			logger: logger.With("endpoint", ep.Name, "signal", sig),
+		}
+		r[ep.signalPath(sig)] = http.HandlerFunc(methodNotAllowed)
 	}
+	return r
+}
+
+// newMux adds a catch-all, so unknown paths also get an OTLP error body.
+func newMux(routes map[string]http.Handler) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		writeStatus(w, http.StatusNotFound, "not found")
+	})
+	for pattern, h := range routes {
+		mux.Handle(pattern, h)
+	}
+	return mux
+}
+
+func methodNotAllowed(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Allow", http.MethodPost)
+	writeStatus(w, http.StatusMethodNotAllowed, "method not allowed")
+}
+
+// writeStatus writes an OTLP/HTTP error response: a JSON-encoded
+// google.rpc.Status. OTLP does not use Status.code, so it is omitted.
+func writeStatus(w http.ResponseWriter, status int, msg string) {
+	h := w.Header()
+	h.Set("Content-Type", "application/json")
+	h.Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(struct {
+		Message string `json:"message"`
+	}{msg})
 }
 
 type ingestHandler struct {
@@ -52,11 +89,10 @@ type httpError struct {
 func (h *ingestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	received := time.Now()
 	ctx := r.Context()
-	log := h.logger.With("endpoint", h.ep.Name, "signal", h.signal)
 	reject := func(e *httpError) {
 		// Client errors log the fixed reason only: decoder errors can quote payload bytes.
-		log.WarnContext(ctx, "otlp: request rejected", "status", e.status, "reason", e.msg)
-		http.Error(w, e.msg, e.status)
+		h.logger.WarnContext(ctx, "otlp: request rejected", "status", e.status, "reason", e.msg)
+		writeStatus(w, e.status, e.msg)
 	}
 
 	body, herr := readBody(w, r, h.ep.MaxBodyBytes)
@@ -82,8 +118,8 @@ func (h *ingestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			ReceivedAt: received,
 		}
 		if records, err = h.ep.Processor(ctx, req, records); err != nil {
-			log.ErrorContext(ctx, "otlp: processor failed", "err", err)
-			http.Error(w, "processing failed", http.StatusInternalServerError)
+			h.logger.ErrorContext(ctx, "otlp: processor failed", "err", err)
+			writeStatus(w, http.StatusInternalServerError, "processing failed")
 			return
 		}
 	}
@@ -95,20 +131,20 @@ func (h *ingestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if _, err := h.store.AddTelemetry(ctx, records); err != nil {
-			log.ErrorContext(ctx, "otlp: store write failed", "err", err)
-			http.Error(w, "storage unavailable", http.StatusServiceUnavailable)
+			h.logger.ErrorContext(ctx, "otlp: store write failed", "err", err)
+			writeStatus(w, http.StatusServiceUnavailable, "storage unavailable")
 			return
 		}
 	}
 
-	log.DebugContext(ctx, "otlp: accepted", "records", len(records), "bytes", len(body))
+	h.logger.DebugContext(ctx, "otlp: accepted", "records", len(records), "bytes", len(body))
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.WriteString(w, "{}")
 }
 
-// readBody checks the content type and encoding, then reads the body with
-// the size limit applied to both the raw and the decompressed bytes.
+// readBody limits both the raw and the decompressed bytes, so a small gzip
+// body cannot expand without bound.
 func readBody(w http.ResponseWriter, r *http.Request, limit int64) ([]byte, *httpError) {
 	if ct := r.Header.Get("Content-Type"); ct != "" {
 		if mt, _, err := mime.ParseMediaType(ct); err != nil || mt != "application/json" {

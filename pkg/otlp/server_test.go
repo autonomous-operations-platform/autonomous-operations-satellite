@@ -69,22 +69,28 @@ func waitDone(t *testing.T, srv *otlp.Server) error {
 }
 
 func TestStart_PortInUse(t *testing.T) {
-	busy, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	busy := func() net.Listener {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = ln.Close() })
+		return ln
 	}
-	t.Cleanup(func() { _ = busy.Close() })
+	busy1, busy2 := busy(), busy()
 	first := freeAddr(t)
 
 	srv, err := otlp.Start(t.Context(), otlp.Config{Store: &fakeStore{}, Endpoints: []otlp.Endpoint{
 		{Name: "a", Addr: first, Signals: logsSignals()},
-		{Name: "b", Addr: busy.Addr().String(), Signals: logsSignals()},
+		{Name: "b", Addr: busy1.Addr().String(), Signals: logsSignals()},
+		{Name: "c", Addr: busy2.Addr().String(), Signals: logsSignals()},
 	}})
 	if err == nil || srv != nil {
 		t.Fatalf("want bind error and nil server, got %v, %v", srv, err)
 	}
-	if !strings.Contains(err.Error(), busy.Addr().String()) {
-		t.Errorf("error %q does not name %s", err, busy.Addr())
+	// Endpoints bind in config order, so the first busy address fails.
+	if !strings.Contains(err.Error(), busy1.Addr().String()) {
+		t.Errorf("error %q does not name %s", err, busy1.Addr())
 	}
 	assertClosed(t, first)
 }
@@ -169,8 +175,12 @@ func TestStart_ShutdownTimeout(t *testing.T) {
 	go func() { _, _ = postURL(t, "http://"+srv.Addr("a").String()+"/v1/logs", validLogs) }()
 	<-entered
 	cancel()
-	if err := waitDone(t, srv); !errors.Is(err, context.DeadlineExceeded) {
+	err = waitDone(t, srv)
+	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Wait = %v, want DeadlineExceeded", err)
+	}
+	if n := strings.Count(err.Error(), "deadline exceeded"); n != 1 {
+		t.Errorf("Wait reports the timeout %d times: %v", n, err)
 	}
 }
 
@@ -269,5 +279,190 @@ func TestStart_ReadHeaderTimeout(t *testing.T) {
 	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	if _, err := conn.Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
 		t.Errorf("want server to close the idle connection (EOF), got %v", err)
+	}
+}
+
+// startLogs starts one logs endpoint named name under basePath on addr.
+func startLogs(ctx context.Context, t *testing.T, addr, name, basePath string, proc otlp.Processor) *otlp.Server {
+	t.Helper()
+	srv, err := otlp.Start(ctx, otlp.Config{Store: &fakeStore{}, Endpoints: []otlp.Endpoint{
+		{Name: name, Addr: addr, BasePath: basePath, Signals: logsSignals(), Processor: proc},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return srv
+}
+
+func TestStart_SeparateCallsShareAddr(t *testing.T) {
+	addr := freeAddr(t)
+	ctxA, cancelA := context.WithCancel(t.Context())
+	defer cancelA()
+	ctxB, cancelB := context.WithCancel(t.Context())
+	defer cancelB()
+	a := startLogs(ctxA, t, addr, "a", "/a", nil)
+	b := startLogs(ctxB, t, addr, "b", "/b", nil)
+	if a.Addr("a").String() != b.Addr("b").String() {
+		t.Fatalf("want one shared listener, got %s and %s", a.Addr("a"), b.Addr("b"))
+	}
+	for _, p := range []string{"/a/logs", "/b/logs"} {
+		if code, _ := postURL(t, "http://"+addr+p, validLogs); code != http.StatusOK {
+			t.Errorf("%s: %d", p, code)
+		}
+	}
+
+	cancelA()
+	if err := waitDone(t, a); err != nil {
+		t.Fatalf("Wait a = %v", err)
+	}
+	if code, _ := postURL(t, "http://"+addr+"/a/logs", validLogs); code != http.StatusNotFound {
+		t.Errorf("/a/logs after a stopped: %d, want 404", code)
+	}
+	if code, _ := postURL(t, "http://"+addr+"/b/logs", validLogs); code != http.StatusOK {
+		t.Errorf("/b/logs after a stopped: %d, want 200", code)
+	}
+
+	cancelB()
+	if err := waitDone(t, b); err != nil {
+		t.Fatalf("Wait b = %v", err)
+	}
+	assertClosed(t, addr)
+}
+
+func TestStart_SeparateCallsPortZeroNotShared(t *testing.T) {
+	a := startLogs(t.Context(), t, "127.0.0.1:0", "a", "/a", nil)
+	b := startLogs(t.Context(), t, "127.0.0.1:0", "b", "/b", nil)
+	if a.Addr("a").String() == b.Addr("b").String() {
+		t.Fatalf("port 0 must bind a new port per call, both on %s", a.Addr("a"))
+	}
+}
+
+func TestStart_SeparateCallsConflicts(t *testing.T) {
+	addr := freeAddr(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	first := startLogs(ctx, t, addr, "a", "", nil)
+	for name, cfg := range map[string]otlp.Config{
+		"same path": {Store: &fakeStore{}, Endpoints: []otlp.Endpoint{
+			{Name: "b", Addr: addr, Signals: logsSignals()},
+		}},
+		"different timeouts": {Store: &fakeStore{}, ReadTimeout: time.Second, Endpoints: []otlp.Endpoint{
+			{Name: "b", Addr: addr, BasePath: "/b", Signals: logsSignals()},
+		}},
+	} {
+		srv, err := otlp.Start(t.Context(), cfg)
+		if !errors.Is(err, otlp.ErrInvalidConfig) || srv != nil {
+			t.Errorf("%s: want ErrInvalidConfig and nil server, got %v, %v", name, srv, err)
+		}
+	}
+	if code, _ := postURL(t, "http://"+addr+"/v1/logs", validLogs); code != http.StatusOK {
+		t.Errorf("first call broken by rejected second call: %d", code)
+	}
+	cancel()
+	if err := waitDone(t, first); err != nil {
+		t.Fatal(err)
+	}
+	assertClosed(t, addr)
+}
+
+// Stopping one call on a shared address drains its own in-flight requests
+// and leaves the other call serving.
+func TestStart_SharedAddrDrainsInFlight(t *testing.T) {
+	addr := freeAddr(t)
+	entered, release := make(chan struct{}), make(chan struct{})
+	ctxA, cancelA := context.WithCancel(t.Context())
+	a := startLogs(ctxA, t, addr, "a", "/a", blockingProcessor(entered, release))
+	startLogs(t.Context(), t, addr, "b", "/b", nil)
+
+	result := make(chan int, 1)
+	go func() {
+		code, _ := postURL(t, "http://"+addr+"/a/logs", validLogs)
+		result <- code
+	}()
+	<-entered
+	cancelA()
+	waited := make(chan error, 1)
+	go func() { waited <- a.Wait() }()
+	select {
+	case err := <-waited:
+		t.Fatalf("Wait returned %v while a request was in flight", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+
+	if code := <-result; code != http.StatusOK {
+		t.Errorf("in-flight request got %d, want 200", code)
+	}
+	if err := <-waited; err != nil {
+		t.Fatalf("Wait a = %v", err)
+	}
+	if code, _ := postURL(t, "http://"+addr+"/b/logs", validLogs); code != http.StatusOK {
+		t.Errorf("/b/logs after a stopped: %d", code)
+	}
+}
+
+// A drain timeout on a shared address cancels the contexts of the requests
+// left running.
+func TestStart_SharedAddrDrainTimeoutCancelsRequests(t *testing.T) {
+	addr := freeAddr(t)
+	entered := make(chan struct{})
+	requestErr := make(chan error, 1)
+	proc := func(ctx context.Context, _ otlp.Request, r []store.NewTelemetryRecord) ([]store.NewTelemetryRecord, error) {
+		close(entered)
+		select {
+		case <-ctx.Done():
+			requestErr <- ctx.Err()
+		case <-time.After(5 * time.Second):
+			requestErr <- nil
+		}
+		return r, nil
+	}
+	ctxA, cancelA := context.WithCancel(t.Context())
+	a, err := otlp.Start(ctxA, otlp.Config{Store: &fakeStore{}, ShutdownTimeout: 50 * time.Millisecond, Endpoints: []otlp.Endpoint{
+		{Name: "a", Addr: addr, BasePath: "/a", Signals: logsSignals(), Processor: proc},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := otlp.Start(t.Context(), otlp.Config{Store: &fakeStore{}, ShutdownTimeout: 50 * time.Millisecond, Endpoints: []otlp.Endpoint{
+		{Name: "b", Addr: addr, BasePath: "/b", Signals: logsSignals()},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	go func() { _, _ = postURL(t, "http://"+addr+"/a/logs", validLogs) }()
+	<-entered
+	cancelA()
+	if err := waitDone(t, a); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Wait a = %v, want DeadlineExceeded", err)
+	}
+	if err := <-requestErr; err == nil {
+		t.Error("request context still live after Wait returned")
+	}
+}
+
+// The last call on an address releases the port at once, not after the
+// drain, so a restart on the same address can bind it.
+func TestStart_RestartWhileDraining(t *testing.T) {
+	addr := freeAddr(t)
+	entered, release := make(chan struct{}), make(chan struct{})
+	defer close(release)
+	ctxA, cancelA := context.WithCancel(t.Context())
+	startLogs(ctxA, t, addr, "a", "", blockingProcessor(entered, release))
+	go func() { _, _ = postURL(t, "http://"+addr+"/v1/logs", validLogs) }()
+	<-entered
+	cancelA()
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		_, err := otlp.Start(t.Context(), otlp.Config{Store: &fakeStore{}, Endpoints: []otlp.Endpoint{
+			{Name: "b", Addr: addr, Signals: logsSignals()},
+		}})
+		if err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("restart while a drains: %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
