@@ -33,7 +33,7 @@ var ErrInvalidConfig = errors.New("otlp: invalid config")
 type Config struct {
 	Logger *slog.Logger
 	Store  store.CollectorStore
-	// Endpoints lists the ingestion endpoints. At least one is required.
+	// At least one is required.
 	Endpoints []Endpoint
 
 	ShutdownTimeout   time.Duration
@@ -47,7 +47,7 @@ type Config struct {
 // POST <BasePath>/<signal> for each signal in Signals.
 type Endpoint struct {
 	Name         string
-	Addr         string
+	Addr         string // required by Start, ignored by NewHandler
 	BasePath     string
 	Signals      []store.Signal
 	Processor    Processor
@@ -72,16 +72,16 @@ type Request struct {
 type Processor func(ctx context.Context, req Request, records []store.NewTelemetryRecord) ([]store.NewTelemetryRecord, error)
 
 func (c Config) withDefaults() Config {
-	def := func(d *time.Duration, v time.Duration) {
-		if *d <= 0 {
-			*d = v
+	setDefault := func(field *time.Duration, defaultValue time.Duration) {
+		if *field <= 0 {
+			*field = defaultValue
 		}
 	}
-	def(&c.ShutdownTimeout, DefaultShutdownTimeout)
-	def(&c.ReadHeaderTimeout, DefaultReadHeaderTimeout)
-	def(&c.ReadTimeout, DefaultReadTimeout)
-	def(&c.WriteTimeout, DefaultWriteTimeout)
-	def(&c.IdleTimeout, DefaultIdleTimeout)
+	setDefault(&c.ShutdownTimeout, DefaultShutdownTimeout)
+	setDefault(&c.ReadHeaderTimeout, DefaultReadHeaderTimeout)
+	setDefault(&c.ReadTimeout, DefaultReadTimeout)
+	setDefault(&c.WriteTimeout, DefaultWriteTimeout)
+	setDefault(&c.IdleTimeout, DefaultIdleTimeout)
 	if c.Logger == nil {
 		c.Logger = slog.New(slog.DiscardHandler)
 	}
@@ -103,12 +103,11 @@ func (e Endpoint) withDefaults() Endpoint {
 	return e
 }
 
-// signalPath returns the URL path that serves sig on this endpoint.
 func (e Endpoint) signalPath(sig store.Signal) string {
 	return e.BasePath + "/" + string(sig)
 }
 
-// validate checks a defaulted Config and returns the first problem found.
+// validate expects a Config from withDefaults.
 func (c Config) validate() error {
 	if c.Store == nil {
 		return fmt.Errorf("%w: Store is required", ErrInvalidConfig)
@@ -141,15 +140,17 @@ func (c Config) validate() error {
 	return nil
 }
 
-// validate checks the address-independent fields of a defaulted Endpoint.
+// validate skips Addr because NewHandler does not need one. Config.validate
+// checks it for Start.
 func (e Endpoint) validate() error {
 	if e.Name == "" {
 		return fmt.Errorf("%w: endpoint Name is required", ErrInvalidConfig)
 	}
 	bp := e.BasePath
 	if !strings.HasPrefix(bp, "/") || strings.HasSuffix(bp, "/") ||
-		path.Clean(bp) != bp || strings.ContainsAny(bp, " {}") {
-		return fmt.Errorf("%w: endpoint %q: BasePath %q must start with / and must not end with /",
+		path.Clean(bp) != bp || strings.ContainsAny(bp, " {}%") {
+		// ServeMux unescapes %XX, so "/a%41" and "/aA" would collide and panic.
+		return fmt.Errorf("%w: endpoint %q: BasePath %q must be a clean path that starts with / and has no trailing /, spaces, braces, or %%",
 			ErrInvalidConfig, e.Name, bp)
 	}
 	if len(e.Signals) == 0 {

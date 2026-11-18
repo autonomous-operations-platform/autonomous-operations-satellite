@@ -35,6 +35,7 @@ func TestStart_InvalidConfig(t *testing.T) {
 		{"base path root", otlp.Config{Store: &fakeStore{}, Endpoints: []otlp.Endpoint{with(func(e *otlp.Endpoint) { e.BasePath = "/" })}}},
 		{"base path unclean", otlp.Config{Store: &fakeStore{}, Endpoints: []otlp.Endpoint{with(func(e *otlp.Endpoint) { e.BasePath = "/a//b" })}}},
 		{"base path pattern chars", otlp.Config{Store: &fakeStore{}, Endpoints: []otlp.Endpoint{with(func(e *otlp.Endpoint) { e.BasePath = "/{x}" })}}},
+		{"base path percent escape", otlp.Config{Store: &fakeStore{}, Endpoints: []otlp.Endpoint{with(func(e *otlp.Endpoint) { e.BasePath = "/a%41" })}}},
 		{"negative body limit", otlp.Config{Store: &fakeStore{}, Endpoints: []otlp.Endpoint{with(func(e *otlp.Endpoint) { e.MaxBodyBytes = -1 })}}},
 		{"duplicate name", otlp.Config{Store: &fakeStore{}, Endpoints: []otlp.Endpoint{ok, with(func(e *otlp.Endpoint) { e.BasePath = "/other" })}}},
 		{"path collision on shared addr", otlp.Config{Store: &fakeStore{}, Endpoints: []otlp.Endpoint{
@@ -52,6 +53,22 @@ func TestStart_InvalidConfig(t *testing.T) {
 				t.Error("want nil server on config error")
 			}
 		})
+	}
+}
+
+func TestStart_SameAddrDifferentSignalIsValid(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	srv, err := otlp.Start(ctx, otlp.Config{Store: &fakeStore{}, Endpoints: []otlp.Endpoint{
+		{Name: "a", Addr: "127.0.0.1:0", Signals: []store.Signal{store.SignalLogs}},
+		{Name: "b", Addr: "127.0.0.1:0", Signals: []store.Signal{store.SignalTraces}},
+	}})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	cancel()
+	if err := srv.Wait(); err != nil {
+		t.Fatalf("Wait: %v", err)
 	}
 }
 
@@ -81,7 +98,7 @@ func TestNewHandler_InvalidConfig(t *testing.T) {
 	}
 }
 
-func TestNewHandler_IgnoresAddr(t *testing.T) {
+func TestNewHandler_AddrOptional(t *testing.T) {
 	logsOnly := []store.Signal{store.SignalLogs}
 	if _, err := otlp.NewHandler(otlp.Endpoint{Name: "a", Signals: logsOnly}, &fakeStore{}, nil); err != nil {
 		t.Fatalf("NewHandler without Addr: %v", err)
