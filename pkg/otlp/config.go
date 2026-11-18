@@ -121,9 +121,6 @@ func (c Config) validate() error {
 		if err := e.validate(); err != nil {
 			return err
 		}
-		if e.Addr == "" {
-			return fmt.Errorf("%w: endpoint %q: Addr is required", ErrInvalidConfig, e.Name)
-		}
 		if names[e.Name] {
 			return fmt.Errorf("%w: duplicate endpoint name %q", ErrInvalidConfig, e.Name)
 		}
@@ -140,9 +137,19 @@ func (c Config) validate() error {
 	return nil
 }
 
-// validate skips Addr because NewHandler does not need one. Config.validate
-// checks it for Start.
+// validate checks one endpoint for Start, including Addr.
 func (e Endpoint) validate() error {
+	if err := e.validateWithoutAddr(); err != nil {
+		return err
+	}
+	if e.Addr == "" {
+		return fmt.Errorf("%w: endpoint %q: Addr is required", ErrInvalidConfig, e.Name)
+	}
+	return nil
+}
+
+// validateWithoutAddr skips Addr, which NewHandler does not need.
+func (e Endpoint) validateWithoutAddr() error {
 	if e.Name == "" {
 		return fmt.Errorf("%w: endpoint Name is required", ErrInvalidConfig)
 	}

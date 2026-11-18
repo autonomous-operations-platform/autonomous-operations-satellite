@@ -21,7 +21,7 @@ func NewHandler(ep Endpoint, st store.CollectorStore, logger *slog.Logger) (http
 	if cfg.Store == nil {
 		return nil, fmt.Errorf("%w: Store is required", ErrInvalidConfig)
 	}
-	if err := cfg.Endpoints[0].validate(); err != nil {
+	if err := cfg.Endpoints[0].validateWithoutAddr(); err != nil {
 		return nil, err
 	}
 	return newMux(routes(cfg.Endpoints[0], cfg.Store, cfg.Logger)), nil
