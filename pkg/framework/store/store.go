@@ -6,9 +6,10 @@ import (
 )
 
 var (
-	ErrInvalidID    = errors.New("store: invalid record ID (expected UUIDv7)")
-	ErrInvalidQuery = errors.New("store: invalid query parameters")
-	ErrStoreClosed  = errors.New("store: store is closed")
+	ErrInvalidID         = errors.New("store: invalid record ID (expected UUIDv7)")
+	ErrMissingSourceTime = errors.New("store: missing source_time")
+	ErrInvalidQuery      = errors.New("store: invalid query parameters")
+	ErrStoreClosed       = errors.New("store: store is closed")
 )
 
 // CollectorStore is the store surface exposed to Collectors.

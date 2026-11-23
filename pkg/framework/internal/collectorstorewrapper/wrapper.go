@@ -37,12 +37,17 @@ func (w *StoreWrapper) AddTelemetry(ctx context.Context, records []store.NewTele
 	full := make([]store.TelemetryRecord, len(records))
 	ids := make([]store.RecordID, len(records))
 	for i, r := range records {
+		if r.SourceTime.IsZero() {
+			return nil, store.ErrMissingSourceTime
+		}
+
 		id := w.newID()
 		ids[i] = id
 		full[i] = store.TelemetryRecord{
 			ID:         id,
 			Signal:     r.Signal,
 			ReceivedAt: id.Time(),
+			SourceTime: r.SourceTime,
 			Payload:    r.Payload,
 			Attributes: r.Attributes,
 		}
