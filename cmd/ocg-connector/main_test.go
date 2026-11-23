@@ -30,6 +30,9 @@ func TestParseConfigDefaults(t *testing.T) {
 	if cfg.reflection {
 		t.Error("reflection should default false")
 	}
+	if cfg.rateLimit != 50 || cfg.rateBurst != 100 {
+		t.Errorf("rate defaults = %v/%d, want 50/100", cfg.rateLimit, cfg.rateBurst)
+	}
 	if len(cfg.logSources) != 0 {
 		t.Errorf("logSources = %v, want none", cfg.logSources)
 	}
@@ -39,6 +42,7 @@ func TestParseConfigFlags(t *testing.T) {
 	cfg, err := parseConfig([]string{
 		"-listen", "0.0.0.0:9000",
 		"-doris-addr", "db:9030", "-doris-user", "reader", "-doris-db", "sat",
+		"-rate-limit", "10", "-rate-burst", "20",
 		"-reflection",
 	}, env(nil))
 	if err != nil {
@@ -47,6 +51,9 @@ func TestParseConfigFlags(t *testing.T) {
 	if cfg.listen != "0.0.0.0:9000" || cfg.doris.Addr != "db:9030" ||
 		cfg.doris.User != "reader" || cfg.doris.DB != "sat" || !cfg.reflection {
 		t.Errorf("cfg = %+v", cfg)
+	}
+	if cfg.rateLimit != 10 || cfg.rateBurst != 20 {
+		t.Errorf("rate = %v/%d, want 10/20", cfg.rateLimit, cfg.rateBurst)
 	}
 }
 

@@ -5,6 +5,7 @@ go 1.27.1
 require (
 	github.com/go-mysql-org/go-mysql v1.16.0
 	go.opentelemetry.io/proto/otlp v1.11.1
+	golang.org/x/time v0.16.0
 	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12
 )

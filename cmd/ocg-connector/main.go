@@ -8,6 +8,8 @@
 //	-doris-user  Doris user
 //	-doris-db    Doris database name
 //	-log-source  repeatable component:format=path (format: slog|log4j)
+//	-rate-limit  max Fetch requests per second, global (default 50; 0 disables)
+//	-rate-burst  token-bucket burst size (default 100)
 //	-reflection  enable gRPC server reflection (dev only)
 //
 // The Doris password is read from DORIS_PASSWORD only; it is never a flag.
@@ -41,6 +43,8 @@ type config struct {
 	listen     string
 	doris      doris.Params
 	logSources []logs.Source
+	rateLimit  float64
+	rateBurst  int
 	reflection bool
 }
 
@@ -75,16 +79,23 @@ func run(logger *slog.Logger) error {
 	defer stop()
 
 	srv := server.New(srs.NewReader(db), logStore, logger)
-	return serve(ctx, cfg.listen, cfg.reflection, srv, logger)
+
+	var opts []grpc.ServerOption
+	if limiter := server.NewLimiter(cfg.rateLimit, cfg.rateBurst); limiter != nil {
+		opts = append(opts, grpc.ChainUnaryInterceptor(server.UnaryRateLimitInterceptor(limiter)))
+		logger.InfoContext(ctx, "request rate limiting enabled", "per_second", cfg.rateLimit, "burst", cfg.rateBurst)
+	}
+
+	return serve(ctx, cfg.listen, cfg.reflection, srv, logger, opts...)
 }
 
-func serve(ctx context.Context, listen string, enableReflection bool, srv *server.Server, logger *slog.Logger) error {
+func serve(ctx context.Context, listen string, enableReflection bool, srv *server.Server, logger *slog.Logger, opts ...grpc.ServerOption) error {
 	lis, err := net.Listen("tcp", listen)
 	if err != nil {
 		return fmt.Errorf("listen %q: %w", listen, err)
 	}
 
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(opts...)
 	ocgconnectorv1.RegisterOcgConnectorServiceServer(grpcServer, srv)
 	if enableReflection {
 		reflection.Register(grpcServer)
@@ -120,6 +131,8 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	dorisAddr := fs.String("doris-addr", "127.0.0.1:9030", "Doris host:port")
 	dorisUser := fs.String("doris-user", "root", "Doris user")
 	dorisDB := fs.String("doris-db", "aos", "Doris database name")
+	rateLimit := fs.Float64("rate-limit", 50, "max Fetch requests per second (0 disables rate limiting)")
+	rateBurst := fs.Int("rate-burst", 100, "token-bucket burst size for rate limiting")
 	enableReflection := fs.Bool("reflection", false, "enable gRPC server reflection (dev only)")
 	var sources logSourceFlag
 	fs.Var(&sources, "log-source", "repeatable component:format=path log source")
@@ -136,6 +149,8 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 			DB:       *dorisDB,
 		},
 		logSources: sources,
+		rateLimit:  *rateLimit,
+		rateBurst:  *rateBurst,
 		reflection: *enableReflection,
 	}, nil
 }
