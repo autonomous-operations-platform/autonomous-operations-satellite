@@ -105,7 +105,7 @@ func scanSource(src Source, sinceNano int64, limit int) ([]srs.Record, error) {
 		parseTime = func(_ []byte) time.Time { return time.Now() }
 	}
 
-	f, err := os.Open(src.Path) //nolint:gosec // G304: path is operator configuration, not request input
+	f, err := os.Open(src.Path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
@@ -203,7 +203,7 @@ func readLineAt(f *os.File, offset, size int64) (int64, []byte, error) {
 				n = size - pos
 			}
 			nr, err := f.ReadAt(buf[:n], pos)
-			for i := 0; i < nr; i++ {
+			for i := range nr {
 				if buf[i] == '\n' {
 					start = pos + int64(i) + 1
 					found = true

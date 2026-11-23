@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"io"
 	"log/slog"
 	"testing"
 
@@ -95,7 +94,7 @@ func TestLogSourceFlagString(t *testing.T) {
 }
 
 func TestServeGracefulShutdown(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if err := serve(ctx, "127.0.0.1:0", true, server.New(nil, nil, logger), logger); err != nil {
@@ -104,7 +103,7 @@ func TestServeGracefulShutdown(t *testing.T) {
 }
 
 func TestServeListenError(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	if err := serve(context.Background(), "127.0.0.1", false, server.New(nil, nil, logger), logger); err == nil {
 		t.Fatal("expected listen error for addr without port")
 	}

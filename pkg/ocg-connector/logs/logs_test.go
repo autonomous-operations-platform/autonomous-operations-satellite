@@ -520,7 +520,7 @@ func TestReadLineAtOffset0(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "f.log")
 	writeFile(t, path, "first line\nsecond line\n")
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // G304: test opens a temp file it created
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -538,7 +538,7 @@ func TestReadLineAtMidFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "f.log")
 	writeFile(t, path, "first line\nsecond line\n")
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // G304: test opens a temp file it created
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -556,7 +556,7 @@ func TestReadLineAtPastLastNewline(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "f.log")
 	writeFile(t, path, "only line\n")
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // G304: test opens a temp file it created
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}

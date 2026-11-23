@@ -37,6 +37,7 @@ type Record struct {
 	SchemaVersion string
 }
 
+//nolint:gochecknoglobals // immutable lookup table shared by the scanners
 var dtLayouts = []string{
 	"2006-01-02 15:04:05.999999999",
 	"2006-01-02 15:04:05",
@@ -66,6 +67,7 @@ type spec struct {
 	scan      func(rows *sql.Rows) (Record, error)
 }
 
+//nolint:gochecknoglobals // immutable lookup table keyed by store name
 var specs = map[string]spec{
 	StoreTelemetry: {
 		table:     "telemetry",

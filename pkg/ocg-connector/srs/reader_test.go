@@ -103,6 +103,8 @@ func newReader(t *testing.T, st *fakeState) *Reader {
 }
 
 // telCols is the column list for the telemetry table including schema_version.
+//
+//nolint:gochecknoglobals // test fixture shared across subtests
 var telCols = []string{"id", "signal", "payload", "attributes", "received_at", "schema_version"}
 
 // --- tests --------------------------------------------------------------------
