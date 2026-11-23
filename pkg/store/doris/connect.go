@@ -30,6 +30,24 @@ type Params struct {
 	WriteChanSize int
 }
 
+// OpenReadDB opens a read-only pool to an existing database; unlike Connect it
+// never creates the database or alters schema.
+func OpenReadDB(p Params) (*sql.DB, error) {
+	db, err := sql.Open("mysql", dsn(p, p.DB))
+	if err != nil {
+		return nil, fmt.Errorf("doris: open read db: %w", err)
+	}
+	maxConns := p.MaxOpenConns
+	if maxConns == 0 {
+		maxConns = defaultMaxOpenConns
+	}
+	db.SetMaxOpenConns(maxConns)
+	db.SetMaxIdleConns(maxConns)
+	db.SetConnMaxLifetime(5 * time.Minute)
+	db.SetConnMaxIdleTime(2 * time.Minute)
+	return db, nil
+}
+
 func Connect(ctx context.Context, p Params, logger *slog.Logger) (*DorisStore, error) {
 	if logger == nil {
 		logger = slog.Default()
