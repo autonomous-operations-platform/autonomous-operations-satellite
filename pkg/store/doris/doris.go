@@ -120,7 +120,8 @@ func (s *DorisStore) initSchema() error {
 			signal       VARCHAR(50)  NOT NULL,
 			payload      STRING       NOT NULL,
 			attributes   VARIANT      NOT NULL,
-			received_at  DATETIME(3)  NOT NULL
+			received_at  DATETIME(3)  NOT NULL,
+			source_time  DATETIME(3)  NOT NULL
 		) DUPLICATE KEY(id)
 		DISTRIBUTED BY HASH(id) BUCKETS 3
 		PROPERTIES ("replication_num" = "1")`,
@@ -206,7 +207,7 @@ func (s *DorisStore) AddTelemetry(ctx context.Context, records []store.Telemetry
 }
 
 func (s *DorisStore) flushTelemetry(ctx context.Context, batch []store.TelemetryRecord) error {
-	numArgs := 5
+	numArgs := 6
 	row := "(" + strings.TrimSuffix(strings.Repeat("?,", numArgs), ",") + ")"
 	placeholders := strings.TrimSuffix(strings.Repeat(row+",", len(batch)), ",")
 	args := make([]any, 0, len(batch)*numArgs)
@@ -219,11 +220,11 @@ func (s *DorisStore) flushTelemetry(ctx context.Context, batch []store.Telemetry
 		}
 		args = append(args,
 			string(rec.ID), string(rec.Signal), string(rec.Payload),
-			string(attrs), timeArg(rec.ReceivedAt),
+			string(attrs), timeArg(rec.ReceivedAt), timeArg(rec.SourceTime),
 		)
 	}
 	_, err := s.db.ExecContext(ctx,
-		"INSERT INTO telemetry (id, signal, payload, attributes, received_at) VALUES "+placeholders, //nolint:gosec // G202: placeholders are synthesized, no user input
+		"INSERT INTO telemetry (id, signal, payload, attributes, received_at, source_time) VALUES "+placeholders, //nolint:gosec // G202: placeholders are synthesized, no user input
 		args...,
 	)
 	if err != nil {
@@ -272,14 +273,22 @@ func (s *DorisStore) QueryTelemetryByTime(ctx context.Context, q store.Telemetry
 		return store.QueryResult[store.TelemetryRecord]{}, store.ErrStoreClosed
 	}
 
-	qry := "SELECT id, signal, payload, attributes, received_at FROM telemetry WHERE 1=1"
+	// timeCol is one of a fixed allowlist (received_at | source_time), resolved
+	// from the query's TimeField enum — never caller free-text — so it is safe
+	// to interpolate into the SQL.
+	timeCol := "received_at"
+	if q.TimeField == store.BySourceTime {
+		timeCol = "source_time"
+	}
+
+	qry := "SELECT id, signal, payload, attributes, received_at, source_time FROM telemetry WHERE 1=1"
 	args := []any{}
 	if !q.Start.IsZero() {
-		qry += " AND received_at >= ?"
+		qry += " AND " + timeCol + " >= ?"
 		args = append(args, timeArg(q.Start))
 	}
 	if !q.End.IsZero() {
-		qry += " AND received_at < ?"
+		qry += " AND " + timeCol + " < ?"
 		args = append(args, timeArg(q.End))
 	}
 	if conds, cargs := attrConds(q.Attributes); len(conds) > 0 {
@@ -290,7 +299,7 @@ func (s *DorisStore) QueryTelemetryByTime(ctx context.Context, q store.Telemetry
 		qry += " AND " + strings.Join(conds, " AND ")
 		args = append(args, cargs...)
 	}
-	qry += " ORDER BY received_at ASC"
+	qry += " ORDER BY " + timeCol + " ASC"
 
 	rows, err := s.db.QueryContext(ctx, qry, args...)
 	if err != nil {
@@ -329,7 +338,7 @@ func (s *DorisStore) QueryTelemetryFromCursor(ctx context.Context, q store.Telem
 		return store.QueryResult[store.TelemetryRecord]{}, store.ErrStoreClosed
 	}
 
-	qry := "SELECT id, signal, payload, attributes, received_at FROM telemetry"
+	qry := "SELECT id, signal, payload, attributes, received_at, source_time FROM telemetry"
 	var conds []string
 	args := []any{}
 	if q.AfterID != "" {
@@ -561,14 +570,15 @@ func (s *DorisStore) Close() {
 func scanTelemetry(rows *sql.Rows) (store.TelemetryRecord, error) {
 	var rec store.TelemetryRecord
 	var signal, attrsJSON, payload string
-	var receivedAt dorisTime
-	if err := rows.Scan(&rec.ID, &signal, &payload, &attrsJSON, &receivedAt); err != nil {
+	var receivedAt, sourceTime dorisTime
+	if err := rows.Scan(&rec.ID, &signal, &payload, &attrsJSON, &receivedAt, &sourceTime); err != nil {
 		return rec, fmt.Errorf("doris scan telemetry: %w", err)
 	}
 	rec.Signal = store.Signal(signal)
 	rec.Payload = []byte(payload)
 	rec.Attributes = flattenAttrs(attrsJSON)
 	rec.ReceivedAt = receivedAt.t
+	rec.SourceTime = sourceTime.t
 	return rec, nil
 }
 

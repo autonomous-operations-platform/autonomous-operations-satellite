@@ -127,6 +127,76 @@ func TestE2E_WriteTelemetry(t *testing.T) {
 	}
 }
 
+// TestE2E_TelemetrySourceTime verifies that source_time is a real, persisted,
+// queryable column: the written value survives the round trip, is distinct from
+// received_at, and is usable as a first-class filter via TimeField=BySourceTime.
+func TestE2E_TelemetrySourceTime(t *testing.T) {
+	ctx := context.Background()
+
+	s, err := Connect(ctx, e2eParams, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := newTelemetryRecord()
+	if err := s.AddTelemetry(ctx, []store.TelemetryRecord{rec}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Doris DATETIME(3) stores millisecond precision and rounds (observed:
+	// .2562 -> .257), so compare at millisecond granularity with rounding.
+	wantSource := rec.SourceTime.Round(time.Millisecond)
+
+	window := store.TelemetryTimeRangeQuery{
+		Start:     rec.SourceTime.Add(-5 * time.Second),
+		End:       rec.SourceTime.Add(5 * time.Second),
+		TimeField: store.BySourceTime,
+	}
+	var res store.QueryResult[store.TelemetryRecord]
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		res, err = s.QueryTelemetryByTime(ctx, window)
+		if err != nil {
+			t.Fatalf("query BySourceTime: %v", err)
+		}
+		if len(res.Records) == 1 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if len(res.Records) != 1 {
+		t.Fatalf("BySourceTime window: want 1 record, got %d", len(res.Records))
+	}
+	if got := res.Records[0].SourceTime.Round(time.Millisecond); !got.Equal(wantSource) {
+		t.Errorf("queried SourceTime: got %v, want %v", got, wantSource)
+	}
+
+	window.TimeField = store.ByReceivedAt
+	res, err = s.QueryTelemetryByTime(ctx, window)
+	if err != nil {
+		t.Fatalf("query ByReceivedAt: %v", err)
+	}
+	if len(res.Records) != 0 {
+		t.Errorf("ByReceivedAt with a source-time window must not match, got %d", len(res.Records))
+	}
+
+	s.Close()
+
+	db := openVerifyDB(t)
+	var sourceRaw, receivedRaw string
+	err = db.QueryRowContext(ctx,
+		"SELECT source_time, received_at FROM telemetry WHERE id = ?", string(rec.ID),
+	).Scan(&sourceRaw, &receivedRaw)
+	if err != nil {
+		t.Fatalf("select source_time: %v", err)
+	}
+	if sourceRaw == receivedRaw {
+		t.Fatalf("source_time (%s) must differ from received_at (%s)", sourceRaw, receivedRaw)
+	}
+	if want := wantSource.Format("2006-01-02 15:04:05"); !strings.HasPrefix(sourceRaw, want) {
+		t.Errorf("source_time round-trip mismatch: got %q, want prefix %q", sourceRaw, want)
+	}
+}
+
 // TestE2E_ConnectThenImmediateWrite writes a single record immediately after
 // Connect() returns, then reads it back. A Store returned by Connect() must
 // accept writes right away; if the record is missing afterward, Connect()

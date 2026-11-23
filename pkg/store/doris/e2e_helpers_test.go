@@ -79,12 +79,16 @@ func openVerifyDB(t *testing.T) *sql.DB {
 }
 
 func newTelemetryRecord() store.TelemetryRecord {
+	now := time.Now().UTC()
 	return store.TelemetryRecord{
 		ID:         store.RecordID(uuidv7.Generate()),
 		Signal:     "e2e.test",
 		Payload:    []byte(`{"value":1}`),
 		Attributes: map[string]string{"env": "test"},
-		ReceivedAt: time.Now().UTC(),
+		ReceivedAt: now,
+		// SourceTime is deliberately distinct from ReceivedAt so round-trip
+		// assertions can tell the two columns apart.
+		SourceTime: now.Add(-30 * time.Second),
 	}
 }
 
