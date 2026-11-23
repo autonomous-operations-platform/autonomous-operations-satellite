@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/ocg-connector/logs"
 	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/ocg-connector/otlp"
 	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/ocg-connector/srs"
 	ocgconnectorv1 "github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/ocg-connector/v1"
@@ -27,20 +28,27 @@ type SRSReader interface {
 	Fetch(ctx context.Context, store, sinceID, schemaVersion string, limit int) ([]srs.Record, error)
 }
 
+// LogStore is the log read surface the server depends on.
+type LogStore interface {
+	Query(ctx context.Context, store, sinceID string, limit int) ([]srs.Record, error)
+}
+
 type Server struct {
 	ocgconnectorv1.UnimplementedOcgConnectorServiceServer
 
 	srs         SRSReader
+	logs        LogStore
 	maxPageSize int
 	log         *slog.Logger
 }
 
-func New(reader SRSReader, logger *slog.Logger) *Server {
+func New(reader SRSReader, logStore LogStore, logger *slog.Logger) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &Server{
 		srs:         reader,
+		logs:        logStore,
 		maxPageSize: DefaultMaxPageSize,
 		log:         logger.With("component", "ocg-connector"),
 	}
@@ -63,13 +71,20 @@ func (s *Server) Fetch(ctx context.Context, req *ocgconnectorv1.FetchRequest) (*
 }
 
 func (s *Server) read(ctx context.Context, store, sinceID, schemaVersion string, limit int) ([]srs.Record, error) {
-	if !srs.Handles(store) {
+	switch {
+	case srs.Handles(store):
+		if s.srs == nil {
+			return nil, errNoBackend
+		}
+		return s.srs.Fetch(ctx, store, sinceID, schemaVersion, limit)
+	case logs.Handles(store):
+		if s.logs == nil {
+			return nil, errNoBackend
+		}
+		return s.logs.Query(ctx, store, sinceID, limit)
+	default:
 		return nil, fmt.Errorf("%w: %q", errUnknownStore, store)
 	}
-	if s.srs == nil {
-		return nil, errNoBackend
-	}
-	return s.srs.Fetch(ctx, store, sinceID, schemaVersion, limit)
 }
 
 var errNoBackend = errors.New("server: no backend configured for store")
@@ -88,9 +103,9 @@ func (s *Server) clampLimit(limit int) int {
 
 func (s *Server) mapError(ctx context.Context, store string, err error) error {
 	switch {
-	case errors.Is(err, errUnknownStore), errors.Is(err, srs.ErrUnknownStore):
+	case errors.Is(err, errUnknownStore), errors.Is(err, srs.ErrUnknownStore), errors.Is(err, logs.ErrUnknownStore):
 		return status.Errorf(codes.InvalidArgument, "fetch: unknown store %q", store)
-	case errors.Is(err, srs.ErrInvalidCursor):
+	case errors.Is(err, srs.ErrInvalidCursor), errors.Is(err, logs.ErrInvalidCursor):
 		return status.Errorf(codes.InvalidArgument, "fetch: %v", err)
 	case errors.Is(err, errNoBackend):
 		return status.Errorf(codes.Unimplemented, "fetch: store %q is not served by this endpoint", store)

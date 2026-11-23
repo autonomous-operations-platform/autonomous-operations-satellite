@@ -7,6 +7,7 @@
 //	-doris-addr  Doris host:port
 //	-doris-user  Doris user
 //	-doris-db    Doris database name
+//	-log-source  repeatable component:format=path (format: slog|log4j)
 //	-reflection  enable gRPC server reflection (dev only)
 //
 // The Doris password is read from DORIS_PASSWORD only; it is never a flag.
@@ -20,9 +21,11 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/ocg-connector/logs"
 	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/ocg-connector/server"
 	"github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/ocg-connector/srs"
 	ocgconnectorv1 "github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/ocg-connector/v1"
@@ -37,6 +40,7 @@ const shutdownTimeout = 10 * time.Second
 type config struct {
 	listen     string
 	doris      doris.Params
+	logSources []logs.Source
 	reflection bool
 }
 
@@ -60,10 +64,17 @@ func run(logger *slog.Logger) error {
 	}
 	defer func() { _ = db.Close() }()
 
+	var logStore server.LogStore
+	if len(cfg.logSources) > 0 {
+		s := logs.New(cfg.logSources, logger)
+		defer func() { _ = s.Close() }()
+		logStore = s
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	srv := server.New(srs.NewReader(db), logger)
+	srv := server.New(srs.NewReader(db), logStore, logger)
 	return serve(ctx, cfg.listen, cfg.reflection, srv, logger)
 }
 
@@ -110,6 +121,8 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	dorisUser := fs.String("doris-user", "root", "Doris user")
 	dorisDB := fs.String("doris-db", "aos", "Doris database name")
 	enableReflection := fs.Bool("reflection", false, "enable gRPC server reflection (dev only)")
+	var sources logSourceFlag
+	fs.Var(&sources, "log-source", "repeatable component:format=path log source")
 	if err := fs.Parse(args); err != nil {
 		return config{}, err
 	}
@@ -122,6 +135,33 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 			Password: getenv("DORIS_PASSWORD"),
 			DB:       *dorisDB,
 		},
+		logSources: sources,
 		reflection: *enableReflection,
 	}, nil
+}
+
+type logSourceFlag []logs.Source
+
+func (f *logSourceFlag) String() string { return fmt.Sprintf("%d sources", len(*f)) }
+
+func (f *logSourceFlag) Set(v string) error {
+	compAndRest, path, ok := strings.Cut(v, "=")
+	if !ok || path == "" {
+		return fmt.Errorf("log source %q must be component:format=path", v)
+	}
+	component, format, ok := strings.Cut(compAndRest, ":")
+	if !ok || component == "" || format == "" {
+		return fmt.Errorf("log source %q must be component:format=path", v)
+	}
+	var parser func([]byte) time.Time
+	switch format {
+	case "slog":
+		parser = logs.SlogParser
+	case "log4j":
+		parser = logs.Log4jParser
+	default:
+		return fmt.Errorf("log source %q: unknown format %q (known: slog, log4j)", v, format)
+	}
+	*f = append(*f, logs.Source{Component: component, Path: path, ParseTime: parser})
+	return nil
 }
