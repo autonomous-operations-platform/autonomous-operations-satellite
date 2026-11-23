@@ -20,6 +20,9 @@ on:
       - "**/*lock.toml"
   workflow_dispatch: ~
 
+permissions:
+  contents: read
+
 jobs:
   oss-grant-check:
     name: OSS Grant Check
