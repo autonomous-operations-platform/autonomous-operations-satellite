@@ -30,6 +30,11 @@ const (
 	defaultWriteChanSize     = 2048
 )
 
+// currentSchemaVersion is the source schema version stamped on every row. Keep
+// it in sync with schema.SourceSchemaVersion; it is duplicated here to avoid a
+// dependency from the store package to the connector.
+const currentSchemaVersion = "1.0.0"
+
 type subscriber struct {
 	sc     *subChan[store.TelemetryRecord]
 	filter store.TelemetryFilter
@@ -120,7 +125,8 @@ func (s *DorisStore) initSchema() error {
 			signal       VARCHAR(50)  NOT NULL,
 			payload      STRING       NOT NULL,
 			attributes   VARIANT      NOT NULL,
-			received_at  DATETIME(3)  NOT NULL
+			received_at  DATETIME(3)  NOT NULL,
+			schema_version VARCHAR(32) NOT NULL DEFAULT ''
 		) DUPLICATE KEY(id)
 		DISTRIBUTED BY HASH(id) BUCKETS 3
 		PROPERTIES ("replication_num" = "1")`,
@@ -134,7 +140,8 @@ func (s *DorisStore) initSchema() error {
 			window_start      DATETIME(3)  NOT NULL,
 			window_end        DATETIME(3)  NOT NULL,
 			created_at        DATETIME(3)  NOT NULL,
-			source_record_ids STRING       NOT NULL DEFAULT '[]'
+			source_record_ids STRING       NOT NULL DEFAULT '[]',
+			schema_version    VARCHAR(32)  NOT NULL DEFAULT ''
 		) DUPLICATE KEY(id)
 		DISTRIBUTED BY HASH(id) BUCKETS 3
 		PROPERTIES ("replication_num" = "1")`,
@@ -145,7 +152,8 @@ func (s *DorisStore) initSchema() error {
 			insight_id      VARCHAR(36)  NOT NULL,
 			operator_name   VARCHAR(255) NOT NULL,
 			state           VARCHAR(50)  NOT NULL,
-			timestamp       DATETIME(3)  NOT NULL
+			timestamp       DATETIME(3)  NOT NULL,
+			schema_version  VARCHAR(32)  NOT NULL DEFAULT ''
 		) DUPLICATE KEY(id)
 		DISTRIBUTED BY HASH(id) BUCKETS 3
 		PROPERTIES ("replication_num" = "1")`,
@@ -160,7 +168,8 @@ func (s *DorisStore) initSchema() error {
 			step_id      VARCHAR(255) NOT NULL DEFAULT '',
 			description  STRING       NOT NULL DEFAULT '',
 			state        VARCHAR(50)  NOT NULL,
-			timestamp    DATETIME(3)  NOT NULL
+			timestamp    DATETIME(3)  NOT NULL,
+			schema_version VARCHAR(32) NOT NULL DEFAULT ''
 		) DUPLICATE KEY(id)
 		DISTRIBUTED BY HASH(execution_id) BUCKETS 3
 		PROPERTIES ("replication_num" = "1")`,
@@ -206,7 +215,7 @@ func (s *DorisStore) AddTelemetry(ctx context.Context, records []store.Telemetry
 }
 
 func (s *DorisStore) flushTelemetry(ctx context.Context, batch []store.TelemetryRecord) error {
-	numArgs := 5
+	numArgs := 6
 	row := "(" + strings.TrimSuffix(strings.Repeat("?,", numArgs), ",") + ")"
 	placeholders := strings.TrimSuffix(strings.Repeat(row+",", len(batch)), ",")
 	args := make([]any, 0, len(batch)*numArgs)
@@ -219,11 +228,11 @@ func (s *DorisStore) flushTelemetry(ctx context.Context, batch []store.Telemetry
 		}
 		args = append(args,
 			string(rec.ID), string(rec.Signal), string(rec.Payload),
-			string(attrs), timeArg(rec.ReceivedAt),
+			string(attrs), timeArg(rec.ReceivedAt), currentSchemaVersion,
 		)
 	}
 	_, err := s.db.ExecContext(ctx,
-		"INSERT INTO telemetry (id, signal, payload, attributes, received_at) VALUES "+placeholders, //nolint:gosec // G202: placeholders are synthesized, no user input
+		"INSERT INTO telemetry (id, signal, payload, attributes, received_at, schema_version) VALUES "+placeholders, //nolint:gosec // G202: placeholders are synthesized, no user input
 		args...,
 	)
 	if err != nil {
@@ -406,7 +415,7 @@ func (s *DorisStore) AddInsight(ctx context.Context, insight store.Insight) erro
 }
 
 func (s *DorisStore) flushInsights(ctx context.Context, batch []store.Insight) error {
-	numArgs := 9
+	numArgs := 10
 	row := "(" + strings.TrimSuffix(strings.Repeat("?,", numArgs), ",") + ")"
 	placeholders := strings.TrimSuffix(strings.Repeat(row+",", len(batch)), ",")
 	args := make([]any, 0, len(batch)*numArgs)
@@ -419,11 +428,11 @@ func (s *DorisStore) flushInsights(ctx context.Context, batch []store.Insight) e
 		args = append(args,
 			string(ins.ID), ins.ObserverName, ins.Pattern, string(ins.Severity),
 			ins.Summary, timeArg(ins.WindowStart), timeArg(ins.WindowEnd), timeArg(ins.CreatedAt),
-			string(sourceIDsJSON),
+			string(sourceIDsJSON), currentSchemaVersion,
 		)
 	}
 	_, err := s.db.ExecContext(ctx,
-		"INSERT INTO insights (id, observer_name, pattern, severity, summary, window_start, window_end, created_at, source_record_ids) VALUES "+placeholders, //nolint:gosec // G202: placeholders are synthesized, no user input
+		"INSERT INTO insights (id, observer_name, pattern, severity, summary, window_start, window_end, created_at, source_record_ids, schema_version) VALUES "+placeholders, //nolint:gosec // G202: placeholders are synthesized, no user input
 		args...,
 	)
 	if err != nil {
@@ -471,18 +480,18 @@ func (s *DorisStore) AddRecordedAction(ctx context.Context, ra store.RecordedAct
 }
 
 func (s *DorisStore) flushRecordedActions(ctx context.Context, batch []store.RecordedAction) error {
-	numArgs := 6
+	numArgs := 7
 	row := "(" + strings.TrimSuffix(strings.Repeat("?,", numArgs), ",") + ")"
 	placeholders := strings.TrimSuffix(strings.Repeat(row+",", len(batch)), ",")
 	args := make([]any, 0, len(batch)*numArgs)
 	for _, ra := range batch {
 		args = append(args,
 			string(ra.ID), string(ra.ExecutionID), string(ra.InsightID),
-			ra.OperatorName, string(ra.State), timeArg(ra.Timestamp),
+			ra.OperatorName, string(ra.State), timeArg(ra.Timestamp), currentSchemaVersion,
 		)
 	}
 	_, err := s.db.ExecContext(ctx,
-		"INSERT INTO recorded_actions (id, execution_id, insight_id, operator_name, state, timestamp) VALUES "+placeholders, //nolint:gosec // G202: placeholders are synthesized, no user input
+		"INSERT INTO recorded_actions (id, execution_id, insight_id, operator_name, state, timestamp, schema_version) VALUES "+placeholders, //nolint:gosec // G202: placeholders are synthesized, no user input
 		args...,
 	)
 	if err != nil {
@@ -509,18 +518,18 @@ func (s *DorisStore) AddActionLog(ctx context.Context, al store.ActionLog) error
 }
 
 func (s *DorisStore) flushActionLogs(ctx context.Context, batch []store.ActionLog) error {
-	numArgs := 6
+	numArgs := 7
 	row := "(" + strings.TrimSuffix(strings.Repeat("?,", numArgs), ",") + ")"
 	placeholders := strings.TrimSuffix(strings.Repeat(row+",", len(batch)), ",")
 	args := make([]any, 0, len(batch)*numArgs)
 	for _, al := range batch {
 		args = append(args,
 			string(al.ID), string(al.ExecutionID), al.StepID,
-			al.Description, string(al.State), timeArg(al.Timestamp),
+			al.Description, string(al.State), timeArg(al.Timestamp), currentSchemaVersion,
 		)
 	}
 	_, err := s.db.ExecContext(ctx,
-		"INSERT INTO action_logs (id, execution_id, step_id, description, state, timestamp) VALUES "+placeholders, //nolint:gosec // G202: placeholders are synthesized, no user input
+		"INSERT INTO action_logs (id, execution_id, step_id, description, state, timestamp, schema_version) VALUES "+placeholders, //nolint:gosec // G202: placeholders are synthesized, no user input
 		args...,
 	)
 	if err != nil {
