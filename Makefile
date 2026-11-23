@@ -5,7 +5,7 @@ COVERAGE_PROFILE  := $(COVERAGE_DIR)/coverage.out
 .PHONY: build clean coverage lint proto test
 
 build:
-	echo "empty build"
+	go build -o bin/ocg-connector ./cmd/ocg-connector
 
 proto:
 	buf dep update
