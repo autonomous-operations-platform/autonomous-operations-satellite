@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package ocgconnector.v1;
+
+import "opentelemetry/proto/logs/v1/logs.proto";
+
+option go_package = "github.com/autonomous-operations-platform/autonomous-operations-satellite/pkg/ocg-connector/v1;ocgconnectorv1";
+
+
+// connector pulls pages of records per store using cursor-based polling
+
+service OcgConnectorService {
+  // returns the next page of records in a store
+  rpc Fetch(FetchRequest) returns (FetchResponse);
+}
+
+// FetchRequest selects a store and a cursor position.
+message FetchRequest {
+  // store names the record store to read. One of:
+  // "srs/satellite/telemetry", "srs/satellite/insights",
+  // "srs/satellite/action_logs", "srs/satellite/recorded_actions",
+  // "srs/logs/satellite", "srs/logs/doris" (any "srs/logs/<component>").
+  string store = 1;
+
+  string since_id = 2;
+
+  int32 limit = 3;
+
+  string schema_version = 4;
+}
+
+// FetchResponse is one page of records, ordered ascending by UUIDv7.
+message FetchResponse {
+  opentelemetry.proto.logs.v1.LogsData records = 1;
+}

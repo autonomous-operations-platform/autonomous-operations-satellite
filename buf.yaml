@@ -1,0 +1,6 @@
+version: v2
+modules:
+  - path: proto
+    name: buf.build/autonomous-operations-platform/autonomous-operations-satellite
+deps:
+  - buf.build/opentelemetry/opentelemetry

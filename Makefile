@@ -2,10 +2,15 @@ COVERAGE_THRESHOLD := 95
 COVERAGE_DIR      := coverage
 COVERAGE_PROFILE  := $(COVERAGE_DIR)/coverage.out
 
-.PHONY: build clean coverage lint test
+.PHONY: build clean coverage lint proto test
 
 build:
 	echo "empty build"
+
+proto:
+	buf dep update
+	buf lint
+	buf generate
 
 clean:
 	rm -rf bin/ $(COVERAGE_DIR)/
