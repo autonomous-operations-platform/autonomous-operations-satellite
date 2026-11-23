@@ -24,6 +24,7 @@ type TelemetryRecord struct {
 	ID         RecordID          `json:"id"`
 	Signal     Signal            `json:"signal"`
 	ReceivedAt time.Time         `json:"received_at"`
+	SourceTime time.Time         `json:"source_time"`
 	Payload    []byte            `json:"payload"`
 	Attributes map[string]string `json:"attributes,omitempty"`
 }
@@ -31,6 +32,7 @@ type TelemetryRecord struct {
 type NewTelemetryRecord struct {
 	Signal     Signal
 	Payload    []byte
+	SourceTime time.Time
 	Attributes map[string]string
 }
 

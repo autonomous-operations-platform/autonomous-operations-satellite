@@ -66,8 +66,8 @@ func TestAddTelemetry_GeneratesUniqueIDs(t *testing.T) {
 	w := collectorstorewrapper.New(spy, nil)
 
 	ids, err := w.AddTelemetry(context.Background(), []store.NewTelemetryRecord{
-		{Signal: store.SignalMetrics},
-		{Signal: store.SignalLogs},
+		{Signal: store.SignalMetrics, SourceTime: time.Now()},
+		{Signal: store.SignalLogs, SourceTime: time.Now()},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -93,7 +93,7 @@ func TestAddTelemetry_ReceivedAtFromID(t *testing.T) {
 	w := collectorstorewrapper.NewWithIDGenerator(spy, func() store.RecordID { return fixedID })
 
 	if _, err := w.AddTelemetry(context.Background(), []store.NewTelemetryRecord{
-		{Signal: store.SignalMetrics},
+		{Signal: store.SignalMetrics, SourceTime: time.Now()},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -110,8 +110,8 @@ func TestAddTelemetry_IDsMatchRecords(t *testing.T) {
 	w := collectorstorewrapper.New(spy, nil)
 
 	ids, err := w.AddTelemetry(context.Background(), []store.NewTelemetryRecord{
-		{Signal: store.SignalMetrics},
-		{Signal: store.SignalLogs},
+		{Signal: store.SignalMetrics, SourceTime: time.Now()},
+		{Signal: store.SignalLogs, SourceTime: time.Now()},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -130,7 +130,7 @@ func TestAddTelemetry_FieldsPassedThrough(t *testing.T) {
 	payload := []byte("test-payload")
 	attrs := map[string]string{"host": "node-1"}
 	_, err := w.AddTelemetry(context.Background(), []store.NewTelemetryRecord{
-		{Signal: store.SignalMetrics, Payload: payload, Attributes: attrs},
+		{Signal: store.SignalMetrics, Payload: payload, Attributes: attrs, SourceTime: time.Now()},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -152,7 +152,7 @@ func TestAddTelemetry_PropagatesError(t *testing.T) {
 	spy := &spyStore{retErr: want}
 	w := collectorstorewrapper.New(spy, nil)
 
-	_, err := w.AddTelemetry(context.Background(), []store.NewTelemetryRecord{{Signal: store.SignalMetrics}})
+	_, err := w.AddTelemetry(context.Background(), []store.NewTelemetryRecord{{Signal: store.SignalMetrics, SourceTime: time.Now()}})
 	if !errors.Is(err, want) {
 		t.Errorf("want %v, got %v", want, err)
 	}
@@ -177,8 +177,8 @@ func TestAddTelemetry_LogsAtDebug(t *testing.T) {
 	w := collectorstorewrapper.New(&spyStore{}, slog.New(handler))
 
 	_, err := w.AddTelemetry(context.Background(), []store.NewTelemetryRecord{
-		{Signal: store.SignalMetrics},
-		{Signal: store.SignalLogs},
+		{Signal: store.SignalMetrics, SourceTime: time.Now()},
+		{Signal: store.SignalLogs, SourceTime: time.Now()},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -189,6 +189,17 @@ func TestAddTelemetry_LogsAtDebug(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("log output missing %s\ngot: %s", want, out)
 		}
+	}
+}
+
+func TestAddTelemetry_RequiresSourceTime(t *testing.T) {
+	want := store.ErrMissingSourceTime
+	spy := &spyStore{retErr: want}
+	w := collectorstorewrapper.New(spy, nil)
+
+	_, err := w.AddTelemetry(context.Background(), []store.NewTelemetryRecord{{Signal: store.SignalMetrics}})
+	if !errors.Is(err, want) {
+		t.Errorf("want %v, got %v", want, err)
 	}
 }
 
@@ -208,7 +219,7 @@ func TestAddTelemetry_RoundTripThroughMemstore(t *testing.T) {
 	}
 
 	ids, err := w.AddTelemetry(ctx, []store.NewTelemetryRecord{
-		{Signal: store.SignalMetrics, Payload: []byte("data")},
+		{Signal: store.SignalMetrics, Payload: []byte("data"), SourceTime: time.Now()},
 	})
 	if err != nil {
 		t.Fatal(err)

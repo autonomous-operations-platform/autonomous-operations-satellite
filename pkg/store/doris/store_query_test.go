@@ -19,6 +19,9 @@ import (
 //nolint:gochecknoglobals // this is a global used inside a test
 var fakeRowsRegistry sync.Map
 
+//nolint:gochecknoglobals // captures the last telemetry SELECT per DSN for assertions
+var fakeQueryRegistry sync.Map
+
 //nolint:gochecknoinits // this initializes a test
 func init() {
 	sql.Register("fakerows", rowsDriver{})
@@ -52,10 +55,11 @@ func (s *rowsStmt) Exec(_ []driver.Value) (driver.Result, error) {
 }
 
 func (s *rowsStmt) Query(_ []driver.Value) (driver.Rows, error) {
-	cols := []string{"id", "signal", "payload", "attributes", "received_at"}
+	cols := []string{"id", "signal", "payload", "attributes", "received_at", "source_time"}
 	if !strings.Contains(s.query, "FROM telemetry") {
 		return &cannedRows{cols: cols}, nil
 	}
+	fakeQueryRegistry.Store(s.dsn, s.query)
 	var data [][]driver.Value
 	if v, ok := fakeRowsRegistry.Load(s.dsn); ok {
 		data = v.([][]driver.Value)
@@ -96,7 +100,7 @@ func (s *failStmt) Query(_ []driver.Value) (driver.Rows, error) {
 }
 
 func row(id, signal, payload, attrs string) []driver.Value {
-	return []driver.Value{id, signal, payload, attrs, time.Time{}}
+	return []driver.Value{id, signal, payload, attrs, time.Time{}, time.Time{}}
 }
 
 func newRowStore(t *testing.T, rows [][]driver.Value) *DorisStore {
@@ -193,6 +197,50 @@ func TestQueryByTime_attributeFilter(t *testing.T) {
 	}
 	if res.Records[0].Attributes["service.name"] != "nginx" {
 		t.Fatalf("want nginx, got %s", res.Records[0].Attributes["service.name"])
+	}
+}
+
+func TestQueryByTime_bySourceTime_filtersAndOrdersBySourceTimeColumn(t *testing.T) {
+	s := newRowStore(t, nil)
+	_, err := s.QueryTelemetryByTime(context.Background(), store.TelemetryTimeRangeQuery{
+		Start:     time.Now().Add(-time.Hour),
+		End:       time.Now().Add(time.Hour),
+		TimeField: store.BySourceTime,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, ok := fakeQueryRegistry.Load(t.Name())
+	if !ok {
+		t.Fatal("no telemetry query was captured")
+	}
+	qry := v.(string)
+	if !strings.Contains(qry, "source_time >= ?") || !strings.Contains(qry, "source_time < ?") {
+		t.Fatalf("expected source_time range predicates, got: %s", qry)
+	}
+	if !strings.Contains(qry, "ORDER BY source_time ASC") {
+		t.Fatalf("expected ordering by source_time, got: %s", qry)
+	}
+	if strings.Contains(qry, "received_at >= ?") || strings.Contains(qry, "received_at < ?") {
+		t.Fatalf("received_at must not be used for filtering when TimeField=BySourceTime: %s", qry)
+	}
+}
+
+func TestQueryByTime_defaultFiltersByReceivedAt(t *testing.T) {
+	s := newRowStore(t, nil)
+	_, err := s.QueryTelemetryByTime(context.Background(), store.TelemetryTimeRangeQuery{
+		Start: time.Now().Add(-time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, ok := fakeQueryRegistry.Load(t.Name())
+	if !ok {
+		t.Fatal("no telemetry query was captured")
+	}
+	qry := v.(string)
+	if !strings.Contains(qry, "received_at >= ?") || !strings.Contains(qry, "ORDER BY received_at ASC") {
+		t.Fatalf("default TimeField must filter and order by received_at, got: %s", qry)
 	}
 }
 
@@ -421,7 +469,7 @@ func (*rowsIterErrStmt) Query(_ []driver.Value) (driver.Rows, error) {
 	return &rowsIterErrRowsObj{}, nil
 }
 func (*rowsIterErrRowsObj) Columns() []string {
-	return []string{"id", "signal", "payload", "attributes", "received_at"}
+	return []string{"id", "signal", "payload", "attributes", "received_at", "source_time"}
 }
 func (*rowsIterErrRowsObj) Close() error                { return nil }
 func (*rowsIterErrRowsObj) Next(_ []driver.Value) error { return errRowsIterator }

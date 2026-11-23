@@ -206,10 +206,14 @@ func (s *Store) QueryTelemetryByTime(ctx context.Context, q store.TelemetryTimeR
 
 	var out []store.TelemetryRecord
 	for _, r := range snap {
-		if !q.Start.IsZero() && r.ReceivedAt.Before(q.Start) {
+		t := r.ReceivedAt
+		if q.TimeField == store.BySourceTime {
+			t = r.SourceTime
+		}
+		if !q.Start.IsZero() && t.Before(q.Start) {
 			continue
 		}
-		if !q.End.IsZero() && r.ReceivedAt.After(q.End) {
+		if !q.End.IsZero() && t.After(q.End) {
 			continue
 		}
 		if !matchAttrs(r.Attributes, q.Attributes) {

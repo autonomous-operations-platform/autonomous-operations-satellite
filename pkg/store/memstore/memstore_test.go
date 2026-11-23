@@ -124,6 +124,47 @@ func TestSubscribeTelemetry_FilterBySignal(t *testing.T) {
 	}
 }
 
+func TestQueryTelemetryByTime_ByTimeField(t *testing.T) {
+	s := memstore.New()
+	base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	// ReceivedAt and SourceTime sit in disjoint windows so the query can only
+	// match via the column named by TimeField.
+	rec := store.TelemetryRecord{
+		ID:         store.NewID(),
+		Signal:     store.SignalMetrics,
+		ReceivedAt: base.Add(10 * time.Hour), // far outside the source-time window
+		SourceTime: base,
+	}
+	if err := s.AddTelemetry(context.Background(), []store.TelemetryRecord{rec}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Window around SourceTime: BySourceTime matches, default (ReceivedAt) does not.
+	srcWindow := store.TelemetryTimeRangeQuery{
+		Start:     base.Add(-time.Hour),
+		End:       base.Add(time.Hour),
+		TimeField: store.BySourceTime,
+	}
+	res, err := s.QueryTelemetryByTime(context.Background(), srcWindow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Records) != 1 {
+		t.Fatalf("BySourceTime: want 1 record, got %d", len(res.Records))
+	}
+
+	defWindow := srcWindow
+	defWindow.TimeField = store.ByReceivedAt
+	res, err = s.QueryTelemetryByTime(context.Background(), defWindow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Records) != 0 {
+		t.Fatalf("ByReceivedAt: source-time window must not match received_at, got %d", len(res.Records))
+	}
+}
+
 func TestSubscribeTelemetry_ChannelClosesOnCancel(t *testing.T) {
 	s := memstore.New()
 	ctx, cancel := context.WithCancel(context.Background())

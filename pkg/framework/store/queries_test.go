@@ -50,6 +50,21 @@ func TestTelemetryTimeRangeQuery_Validate(t *testing.T) {
 			query:   store.TelemetryTimeRangeQuery{Start: later, End: now},
 			wantErr: true,
 		},
+		{
+			name:    "default TimeField (ByReceivedAt)",
+			query:   store.TelemetryTimeRangeQuery{Start: now, TimeField: store.ByReceivedAt},
+			wantErr: false,
+		},
+		{
+			name:    "BySourceTime",
+			query:   store.TelemetryTimeRangeQuery{Start: now, TimeField: store.BySourceTime},
+			wantErr: false,
+		},
+		{
+			name:    "unknown TimeField",
+			query:   store.TelemetryTimeRangeQuery{Start: now, TimeField: store.TelemetryTimeField("payload")},
+			wantErr: true,
+		},
 	}
 
 	for _, tc := range tests {
