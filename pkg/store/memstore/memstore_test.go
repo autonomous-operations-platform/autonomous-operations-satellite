@@ -480,6 +480,68 @@ func TestQueryTelemetryFromCursor_Pagination(t *testing.T) {
 	}
 }
 
+// TestQueryTelemetryFromCursor_SyntheticAfterID verifies that AfterID does not
+// need to match a stored record. The contract is: return records with ID
+// strictly greater than AfterID (lexicographic UUIDv7 order).
+func TestQueryTelemetryFromCursor_SyntheticAfterID(t *testing.T) {
+	s := memstore.New()
+	ctx := context.Background()
+
+	// Generate the synthetic cursor before any records are inserted so its
+	// ID is earlier than the two records below. It will never equal a stored
+	// record, but the two records must still be returned.
+	syntheticCursor := store.NewID()
+
+	id1 := store.NewID()
+	id2 := store.NewID()
+	if err := s.AddTelemetry(ctx, []store.TelemetryRecord{
+		{ID: id1, Signal: store.SignalMetrics},
+		{ID: id2, Signal: store.SignalMetrics},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := s.QueryTelemetryFromCursor(ctx, store.TelemetryCursorQuery{
+		AfterID: syntheticCursor,
+		Count:   10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Records) != 2 {
+		t.Fatalf("synthetic AfterID: want 2 records, got %d", len(res.Records))
+	}
+	if res.Records[0].ID != id1 || res.Records[1].ID != id2 {
+		t.Errorf("synthetic AfterID: got (%s, %s), want (%s, %s)",
+			res.Records[0].ID, res.Records[1].ID, id1, id2)
+	}
+}
+
+func TestQueryTelemetryFromCursor_AttributeFilter(t *testing.T) {
+	s := memstore.New()
+	ctx := context.Background()
+
+	matchID := store.NewID()
+	skipID := store.NewID()
+	if err := s.AddTelemetry(ctx, []store.TelemetryRecord{
+		{ID: matchID, Signal: store.SignalMetrics, Attributes: map[string]string{"env": "prod"}},
+		{ID: skipID, Signal: store.SignalMetrics, Attributes: map[string]string{"env": "staging"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := s.QueryTelemetryFromCursor(ctx, store.TelemetryCursorQuery{
+		Count:      10,
+		Attributes: map[string]string{"env": "prod"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Records) != 1 || res.Records[0].ID != matchID {
+		t.Fatalf("want [matchID], got %v", res.Records)
+	}
+}
+
 func TestQueryTelemetryFromCursor_InvalidQuery(t *testing.T) {
 	s := memstore.New()
 	_, err := s.QueryTelemetryFromCursor(context.Background(), store.TelemetryCursorQuery{Count: 0})

@@ -229,12 +229,8 @@ func (s *Store) QueryTelemetryFromCursor(ctx context.Context, q store.TelemetryC
 	s.mu.Unlock()
 
 	var out []store.TelemetryRecord
-	past := q.AfterID == ""
 	for _, r := range snap {
-		if !past {
-			if r.ID == q.AfterID {
-				past = true
-			}
+		if q.AfterID != "" && r.ID <= q.AfterID {
 			continue
 		}
 		if !matchAttrs(r.Attributes, q.Attributes) {
