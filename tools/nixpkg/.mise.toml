@@ -1,0 +1,79 @@
+# .mise.toml — folder-scoped build toolchain for the AOS satellite PACKAGE layer.
+#
+# This is the package/module flake (tools/nixpkg): the signature-verified satellite
+# payload, Apache Doris, the reusable NixOS modules, and the portable systemd installer.
+# The NixOS IMAGE layer lives in tools/nixos and has its own .mise.toml.
+#
+# This Mac has no Nix and mise has no Nix backend. Nix hardcodes /nix/store, so a
+# per-folder store on Darwin is fragile. Instead, mise:
+#   - pins the `ocm` CLI (Mac-side verify/inspect helpers match the build version), and
+#   - orchestrates a pinned Linux container that owns a real /nix and IS the Linux builder.
+#
+# NOTE on `path:/work` vs `.#`: the signed CTF + key live under vendor/, which is
+# git-ignored (no binaries in git). A flake built from the git tree can't see ignored
+# files, so every build below uses a `path:` flake ref (which copies the whole directory,
+# ignored files included) instead of `.#`.
+
+[tools]
+# Pin the OCM CLI to the version confirmed for the build-time verify gate (0.25.0).
+# Supply-chain control: the Mac-side helpers match the in-container verifier.
+# NOTE: the *new* Open Component Model CLI (with `verify component-version`) lives in
+# the `open-component-model/open-component-model` repo — not the legacy `ocm` repo.
+"github:open-component-model/open-component-model" = "0.25.0"
+
+[env]
+# Pinned Nix builder image, by DIGEST not tag — itself a supply-chain control for the
+# build toolchain. Multi-arch index digest for nixos/nix:2.31.2 (Nix 2.31.2).
+NIX_IMAGE = "nixos/nix:2.31.2@sha256:29fc5fe207f159ceb0143c25c19c774062fee02ce5eda118f3067547b3054894"
+# Persistent Nix store cache (named Docker volume) → fast incremental rebuilds.
+NIX_STORE_VOLUME = "aos-nix-store"
+# Native arch of the builder. Uncomment one pair below — x86_64 for WSL2 / native Linux x86_64, aarch64 for Apple Silicon / Colima.
+# NIX_SYSTEM = "x86_64-linux"
+# NIX_PLATFORM = "linux/amd64"
+NIX_SYSTEM = "aarch64-linux"
+NIX_PLATFORM = "linux/arm64"
+
+[tasks.nix-shell-up]
+description = "Start the pinned Nix container over Colima; confirm flakes are enabled."
+run = """
+docker run --rm -it \
+  --platform "$NIX_PLATFORM" \
+  -v "$PWD":/work -w /work \
+  -v "$NIX_STORE_VOLUME":/nix \
+  "$NIX_IMAGE" \
+  nix --experimental-features "nix-command flakes" --version
+"""
+
+[tasks.build]
+description = "Build a flake attr inside the pinned Nix container (default: the satellite package)."
+run = """
+ATTR="${1:-packages.$NIX_SYSTEM.satellite}"
+docker run --rm \
+  --platform "$NIX_PLATFORM" \
+  -v "$PWD":/work -w /work \
+  -v "$NIX_STORE_VOLUME":/nix \
+  "$NIX_IMAGE" \
+  nix --experimental-features "nix-command flakes" build "path:/work#$ATTR" --print-out-paths
+"""
+
+[tasks.verify-ctf]
+description = "Build the standalone OCM signature-verification gate (fails on bad/absent signature)."
+run = """
+docker run --rm \
+  --platform "$NIX_PLATFORM" \
+  -v "$PWD":/work -w /work \
+  -v "$NIX_STORE_VOLUME":/nix \
+  "$NIX_IMAGE" \
+  nix --experimental-features "nix-command flakes" build "path:/work#packages.$NIX_SYSTEM.ctf-verified" --print-out-paths
+"""
+
+[tasks.satellite-systemd]
+description = "Build the portable systemd installer (satellite + Doris units + aos-ctl.sh). Run aos-ctl.sh install on a systemd host."
+run = """
+docker run --rm \
+  --platform "$NIX_PLATFORM" \
+  -v "$PWD":/work -w /work \
+  -v "$NIX_STORE_VOLUME":/nix \
+  "$NIX_IMAGE" \
+  nix --experimental-features "nix-command flakes" build "path:/work#packages.$NIX_SYSTEM.satellite-systemd" --print-out-paths
+"""
