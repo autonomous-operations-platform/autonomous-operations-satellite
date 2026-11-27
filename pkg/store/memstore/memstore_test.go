@@ -517,6 +517,31 @@ func TestQueryTelemetryFromCursor_SyntheticAfterID(t *testing.T) {
 	}
 }
 
+func TestQueryTelemetryFromCursor_AttributeFilter(t *testing.T) {
+	s := memstore.New()
+	ctx := context.Background()
+
+	matchID := store.NewID()
+	skipID := store.NewID()
+	if err := s.AddTelemetry(ctx, []store.TelemetryRecord{
+		{ID: matchID, Signal: store.SignalMetrics, Attributes: map[string]string{"env": "prod"}},
+		{ID: skipID, Signal: store.SignalMetrics, Attributes: map[string]string{"env": "staging"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := s.QueryTelemetryFromCursor(ctx, store.TelemetryCursorQuery{
+		Count:      10,
+		Attributes: map[string]string{"env": "prod"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Records) != 1 || res.Records[0].ID != matchID {
+		t.Fatalf("want [matchID], got %v", res.Records)
+	}
+}
+
 func TestQueryTelemetryFromCursor_InvalidQuery(t *testing.T) {
 	s := memstore.New()
 	_, err := s.QueryTelemetryFromCursor(context.Background(), store.TelemetryCursorQuery{Count: 0})
