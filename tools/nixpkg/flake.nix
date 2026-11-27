@@ -12,7 +12,7 @@
       systems = [ "aarch64-linux" "x86_64-linux" ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f system);
 
-      # Overlay the pinned OCM 0.15.0 (new rewrite, has `verify component-version`)
+      # Overlay the pinned OCM (new rewrite, has `verify component-version`)
       # over nixpkgs' legacy `ocm`, so every build-time verify/extract uses it.
       ocmOverlay = final: prev: {
         ocm = import ./nix/ocm.nix { pkgs = prev; };

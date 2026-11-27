@@ -3,7 +3,7 @@
 # nixpkgs ships the LEGACY OCM CLI (open-component-model/ocm, v0.x), which has no
 # `verify component-version` subcommand. The build-time signature gate needs the NEW
 # Open Component Model rewrite (open-component-model/open-component-model). We pin its
-# release binary v0.15.0 — matching the `ocm` the .mise.toml pins for Mac-side helpers
+# release binary — matching the `ocm` the .mise.toml pins for Mac-side helpers
 # and the version the verify/download commands were confirmed against.
 #
 # Pinning the verifier by exact version + sha256 is itself a supply-chain control:
@@ -14,17 +14,17 @@
 let
   inherit (pkgs) stdenv lib;
 
-  version = "0.15.0";
+  version = "0.25.0";
 
   # Prebuilt static release binaries, per Nix build platform.
   asset = {
     "aarch64-linux" = {
       name = "ocm-linux-arm64";
-      hash = "sha256-WfuSAGseRPMWTq81/hKg14sST3Lg2ML5q3XeZWZ9zsU=";
+      hash = "sha256-3VsZ2HqZeX95PaHeKqodezzFsDkIjPiclZbAw07Nq9A=";
     };
     "x86_64-linux" = {
       name = "ocm-linux-amd64";
-      hash = "sha256-vcnLO1AN1L0kgHitQnemvyHYCbGxrv8rJkItFQG8XJQ=";
+      hash = "sha256-BwSAmQ4nv2XQfDqG8h0/ZLLnimh+a3QMq6114bKzX1o=";
     };
   }.${stdenv.hostPlatform.system}
     or (throw "ocm.nix: unsupported system ${stdenv.hostPlatform.system}");

@@ -101,7 +101,7 @@ way, so provenance holds regardless of where the bytes come from.
 | Gate | Mechanism | Fails build when |
 | --- | --- | --- |
 | Input reproducibility | `flake.lock` pins nixpkgs + all inputs by hash | an input's content changes |
-| Toolchain pinning | `ocm` 0.15.0 pinned (mise + Nix FOD overlay); Nix image pinned by **digest** | the verifier/toolchain drifts |
+| Toolchain pinning | `ocm` version pinned (mise + Nix FOD overlay); Nix image pinned by **digest** | the verifier/toolchain drifts |
 | **Byte integrity of CTF** | fixed-output sha256 (`fetchurl` hash, or the `sha256sum -c` gate in `satellite-ctf.nix`) | tarball bytes ≠ pinned hash |
 | **Provenance of satellite** | `ocm verify component-version` RSASSA-PSS vs `vendor/satellite.pub.pem` at build | signature invalid/absent |
 | Output integrity | Nix content-addressed store | any derivation output tampered |
@@ -220,7 +220,7 @@ satellite) is in **[`docs/run-on-ubuntu.md`](docs/run-on-ubuntu.md)**.
 
 A macOS host has no Nix. `.mise.toml` orchestrates a pinned Linux container that owns a
 real `/nix` and **is** the builder. It pins the `ocm` CLI
-(`github:open-component-model/open-component-model@0.15.0`) and the Nix builder image by
+(`github:open-component-model/open-component-model@0.25.0`) and the Nix builder image by
 **digest** (`nixos/nix:2.31.2@sha256:…`).
 
 ```sh

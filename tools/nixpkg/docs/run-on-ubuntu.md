@@ -161,7 +161,7 @@ nix build ".#packages.$NIX_SYSTEM.satellite" --print-out-paths
 > files. On the host you can build the same way with `nix build 'path:/abs/path/to/tools/nixpkg#…'` —
 > a `path:` ref copies the whole directory, ignored files included.
 
-The build runs the whole supply chain: it fetches the pinned **OCM 0.15.0** CLI, checks
+The build runs the whole supply chain: it fetches the pinned **OCM** CLI, checks
 the CTF's sha256, runs **`ocm verify component-version`** against the RSASSA-PSS public
 key (a bad or missing signature **fails the build**), then extracts the arch-matched
 binary. The result is a static Go executable:

@@ -15,11 +15,11 @@
 # ignored files included) instead of `.#`.
 
 [tools]
-# Pin the OCM CLI to the version confirmed for the build-time verify gate (0.15.0).
+# Pin the OCM CLI to the version confirmed for the build-time verify gate (0.25.0).
 # Supply-chain control: the Mac-side helpers match the in-container verifier.
 # NOTE: the *new* Open Component Model CLI (with `verify component-version`) lives in
 # the `open-component-model/open-component-model` repo — not the legacy `ocm` repo.
-"github:open-component-model/open-component-model" = "0.15.0"
+"github:open-component-model/open-component-model" = "0.25.0"
 
 [env]
 # Pinned Nix builder image, by DIGEST not tag — itself a supply-chain control for the
