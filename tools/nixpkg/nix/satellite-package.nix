@@ -32,11 +32,11 @@ let
     or (throw "satellite-package: unsupported system ${stdenv.hostPlatform.system}");
 
   componentRef = ctfVerified.componentRef;   # the signed component:version
-  resourceName = "f5-vlan-demo-satellite";    # OCM resource = component leaf name
+  resourceName = "hello-world-satellite";    # OCM resource = component leaf name
 in
 pkgs.stdenvNoCC.mkDerivation {
-  pname = "f5-vlan-demo-satellite";
-  version = "0.0.3";
+  pname = "hello-world-satellite";
+  version = "0.0.1";
 
   dontUnpack = true;
 

@@ -24,16 +24,17 @@ let
 
   # ── (a) SOURCE TOGGLE ─────────────────────────────────────────────────────
   #
-  # The committed `.sha256sum` fixes the hash ahead of publish, so flipping to
-  # `fetchurl` changes nothing downstream. The authoritative hash is `expectedSha256`
-  # below (and vendor/<satellite>.ctf.tgz.sha256sum); convert to SRI for `fetchurl`.
+  # The committed `.sha256sum` is the single source of truth for the blob hash.
+  # It is wired in as a Nix input (see `sha256sumFile` below), so updating the file
+  # automatically invalidates the derivation. When flipping to `fetchurl`, convert the
+  # hex hash in that file to SRI format for the `hash` attribute.
 
   # Vendored (works offline today, before the GitHub repo exists):
-  ctfTgz = ../vendor/f5-vlan-demo-satellite-0.0.3.ctf.tgz;
+  ctfTgz = ../vendor/hello-world-satellite-0.0.1.ctf.tgz;
 
   # Later — flip to GitHub publish (same sha256, nothing else changes):
   # ctfTgz = pkgs.fetchurl {
-  #   url  = "https://github.com/<org>/<repo>/releases/download/v0.0.3/f5-vlan-demo-satellite-0.0.3.ctf.tgz";
+  #   url  = "https://github.com/<org>/<repo>/releases/download/v0.0.1/hello-world-satellite-0.0.1.ctf.tgz";
   #   hash = "sha256-<SRI of the vendored tgz>";
   # };
 
@@ -43,23 +44,18 @@ let
   pubKey = ../vendor/satellite.pub.pem;
 
   # The signed component version inside the CTF, and the signature name from .ocm/config.
-  componentRef = "github.tools.sap/autonomous-operations/aos-demo/satellites/f5-vlan-demo-satellite:0.0.3";
+  componentRef = "github.tools.sap/autonomous-operations/aos-demo/satellites/hello-world-satellite:0.0.1";
   signatureName = "satellite-sig";
 
-  # Committed known-good sha256 of the CTF tarball (hex), from the vendored
-  # `.ctf.tgz.sha256sum`. `ocm verify` signs only the
-  # component DESCRIPTOR's normalised form — it does NOT re-hash resource blobs, and
-  # `ocm download` does not either (confirmed live). So byte-integrity of the blobs
-  # must be enforced separately: this hash gate catches any tampering with the tarball
-  # on the vendored path, exactly as the fixed-output `fetchurl` hash does on the
-  # GitHub path. Two independent gates: byte-integrity here, provenance via ocm verify.
-  expectedSha256 = "f4a67a1af79a345fff50d757d6914e7b3e3f4e3abf708e8823a9ece49af7915d";
+  # sha256sum(1) file for the CTF tarball. Declared as a Nix path input so that
+  # changing it invalidates the derivation. The hash is read in buildPhase (GATE 1).
+  sha256sumFile = ../vendor/hello-world-satellite-0.0.1.ctf.tgz.sha256sum;
 
 in
 # ── (b) VERIFIED-UNPACK DERIVATION ──────────────────────────────────────────
 pkgs.stdenvNoCC.mkDerivation {
   pname = "satellite-ctf-verified";
-  version = "0.0.3";
+  version = "0.0.1";
 
   # `src` is the raw signed bytes (vendored or fetched). Content-addressed input.
   src = ctfTgz;
@@ -73,10 +69,12 @@ pkgs.stdenvNoCC.mkDerivation {
     runHook preBuild
 
     # ── GATE 1: byte-integrity of the tarball ───────────────────────────────
-    # Fail the build if the bytes differ from the committed sha256. On the vendored
-    # path this is the only thing standing between a tampered blob and extraction,
-    # since ocm verify/download do not re-hash blobs.
-    echo "${expectedSha256}  $src" | sha256sum -c - \
+    # Read the expected hash from the vendored sha256sum file (first field, hex).
+    # Fail the build if the bytes differ. On the vendored path this is the only thing
+    # standing between a tampered blob and extraction, since ocm verify/download do not
+    # re-hash blobs.
+    expectedHash="$(awk '{print $1}' "${sha256sumFile}")"
+    echo "$expectedHash  $src" | sha256sum -c - \
       || { echo "ERROR: CTF tarball sha256 mismatch (byte-integrity gate)" >&2; exit 1; }
 
     mkdir -p ctf

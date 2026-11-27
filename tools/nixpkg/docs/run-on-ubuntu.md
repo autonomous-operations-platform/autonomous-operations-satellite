@@ -139,6 +139,17 @@ nix --version && nix store info && nix flake --help >/dev/null && echo flakes-ok
 
 ## Step 4 — Build the signature-verified satellite
 
+Build the OCM bundle and place it here (on your host / this repo; or adjust paths in [../nix/satellite-ctf.nix](../nix/satellite-ctf.nix)):
+
+```
+tools/
+└── nixpkg/
+    └── vendor/
+        ├── satellite.pub.pem
+        ├── hello-world-satellite-0.0.1.ctf.tgz
+        └── hello-world-satellite-0.0.1.ctf.tgz.sha256sum
+```
+
 This flake lives on your host, so copy it into the container first. Run the `docker cp`
 **on the host** (open a second terminal, or `exit` and come back), then build from inside:
 
